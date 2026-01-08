@@ -991,7 +991,7 @@ class TimePlotMultichannel(TimeBasedPlot):
     def autoscale(self):
         scaling_sett = self.visualization_settings.get_item(
             'y_axis', 'autoscale')
-        y_std = np.std(self.data_in_graph)
+        y_std = np.std(self.y_in_graph)
         std_tol = scaling_sett.get_item_value('n_std_tolerance')
         std_factor = scaling_sett.get_item_value('n_std_separation')
         if y_std > self.cha_separation * std_tol or \
@@ -1172,8 +1172,8 @@ class TimePlotSingleChannel(TimeBasedPlot):
 
     def autoscale(self):
         # Get statistics
-        y_mean = np.mean(self.data_in_graph[:, self.curr_cha - 1])
-        y_std = np.std(self.data_in_graph)
+        y_mean = np.mean(self.y_in_graph[:, self.curr_cha - 1])
+        y_std = np.std(self.y_in_graph)
         # Current limits
         curr_min, curr_max = self.y_range
         curr_span = max(curr_max - curr_min, 1e-12)
@@ -2741,7 +2741,6 @@ class RealTimePlotWorker(QThread):
                     continue
             chunk_times, chunk_data = self.preprocessor.transform(
                 chunk_times, chunk_data)
-            # print('Chunk received at: %.6f' % time.time())
             # Check if the plot is ready to receive data (sometimes get
             # chunk takes a while and the user presses the button in
             # between)
