@@ -1788,11 +1788,14 @@ class SpectrogramPlot(SpectrogramBasedPlot):
         self.set_title(cha_name=init_cha_label)
         # Display initial array
         height, width = 1, 1
+        cmap = get_cmap(
+            self.visualization_settings.get_item_value('z_axis', 'cmap'))
         rgb_tuple = gui_utils.hex_to_rgb(
             self.theme_colors['THEME_BG_MID'], scale=True)
         solid_color = np.ones((height, width, 3)) * rgb_tuple
         self.im = self.ax.imshow(
             solid_color,
+            cmap=cmap,
             aspect='auto',
             origin='lower',
             animated=True,
