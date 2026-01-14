@@ -13,6 +13,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.cm import get_cmap
 from matplotlib import transforms as mtransforms
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.pyplot as plt
 
 # MEDUSA-PLATFORM MODULES
 from acquisition import lsl_utils
@@ -208,6 +210,16 @@ class BaseSignalSettings(SettingsTree):
             "log_power",
             value=True,
             info="Display power on a logarithmic scale (log-power).",
+        )
+        spectrogram.add_item(
+            "show_spectral_edge",
+            value=True,
+            info="Display as a line a percentile of power.",
+        )
+        spectrogram.add_item(
+            "spectral_edge",
+            value=95.0,
+            info="Percentile value of the spectral edge (%).",
         )
 
 class BaseVisualizationSettings(SettingsTree):
@@ -1639,7 +1651,13 @@ class SpectrogramPlot(SpectrogramBasedPlot):
         self.im = None
         self.curr_cha = None
         self.spec_in_graph = None
+        self.show_spectral_edge = False
+        self.spec_edge_in_graph = None
+        self.spec_edge_in_graph_x = None
         self.c_lim = None
+        self.curves = None
+        self.curve_color = 'white'
+        self.curve_width = 2
 
     def show_context_menu(self, pos: QPoint):
         """
@@ -1800,6 +1818,15 @@ class SpectrogramPlot(SpectrogramBasedPlot):
             origin='lower',
             animated=True,
             zorder=0)
+        # Place spectral edge curve in plot
+        self.show_spectral_edge = self.signal_settings.get_item_value(
+            "spectrogram", "show_spectral_edge")
+        curve_style = {'color': self.curve_color,
+                       'linewidth': self.curve_width}
+        curve, = self.ax.plot([], [],
+                                  animated=True,
+                                  **curve_style)
+        self.curves = [curve]
         # Ticks params
         mode = self.visualization_settings.get_item_value('mode')
         if mode == 'geek':
@@ -1924,6 +1951,25 @@ class SpectrogramPlot(SpectrogramBasedPlot):
         self.im.set_extent([self.x_in_graph[0], self.x_in_graph[-1],
                             self.y_in_graph[0], self.y_in_graph[-1]])
         self.im.set_data(self.spec_in_graph)
+
+        # Update spectral edge
+        if self.show_spectral_edge :
+            spectral_edge = np.percentile(
+                spec,
+                self.signal_settings.get_item_value('spectrogram',
+                                                    'spectral_edge'),
+                axis=0)
+            if mode == 'geek':
+                self.spec_edge_in_graph = spectral_edge
+            else:
+                self.spec_edge_in_graph = self.roll_array(t,
+                                                  spectral_edge)
+
+            self.spec_edge_in_graph_x = np.linspace(self.x_in_graph[0],
+                                                      self.x_in_graph[-1],
+                                                      len(self.spec_edge_in_graph))
+            self.curves[0].set_data(self.spec_edge_in_graph_x,
+                                    self.spec_edge_in_graph)
         # Autoscale and update clim
         apply_autoscale = self.visualization_settings.get_item_value(
             'z_axis', 'autoscale', 'apply')
@@ -1937,6 +1983,8 @@ class SpectrogramPlot(SpectrogramBasedPlot):
         mode = self.visualization_settings.get_item_value('mode')
         # Draw animated elements
         self.ax.draw_artist(self.im)
+        if self.show_spectral_edge :
+            self.ax.draw_artist(self.curves[0])
         if mode == 'clinical':
             self.ax.draw_artist(self.marker_line)
             self.ax.draw_artist(self.marker_tick)
