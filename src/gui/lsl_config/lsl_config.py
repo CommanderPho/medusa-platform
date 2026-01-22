@@ -649,7 +649,7 @@ class EditStreamDialog(QtWidgets.QDialog, ui_stream_config_dialog):
                     eeg_1005_montage =  meeg_montages.get_standard_montage(
                         '10-05', '2D', 'cartesian')
                     # By convention, EEG channel labels are uppercase in MEDUSA
-                    ch_label = ch['label'].upper()
+                    ch_label = ch[ch_label_field].upper()
                     # Get coordinates◘
                     if 'x_pos' not in ch.keys():
                         if ch_label in eeg_1005_montage.keys():
