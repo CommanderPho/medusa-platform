@@ -11,6 +11,7 @@ import queue
 import logging
 import urllib
 import webbrowser
+import fnmatch
 from logging.handlers import QueueHandler
 # EXTERNAL MODULES
 from PySide6.QtUiTools import loadUiType
@@ -541,37 +542,41 @@ class AppsPanelWidget(QWidget, ui_plots_panel_widget):
 
     @exceptions.error_handler(scope='general')
     def package_app(self, app_key):
-        # Choose path
-        filt = "MEDUSA app (*.zip)"
-        directory = "../%s.zip" % app_key
-        app_file = QFileDialog.getSaveFileName(caption="Make app bundle",
-                                               dir=directory,
-                                               filter=filt)[0]
-        if len(app_file) > 0:
-            dir_name = os.path.dirname(app_file)
-            base_name = os.path.basename(app_file).split('.zip')[0]
-            output_path = '%s/%s' % (dir_name, base_name)
+        # Select files to exclude
+        app_path = os.path.join(self.apps_folder, app_key)
+        bundle_files_dialog = AppBundleDialog(
+            app_path, theme_colors=self.theme_colors)
+        if not bundle_files_dialog.exec_():
+            return
+        included_files = bundle_files_dialog.get_included_files()
+        app_file = bundle_files_dialog.get_app_file()
 
-            # Create queue logger
-            log_queue = queue.Queue(-1)
-            queue_handler = QueueHandler(log_queue)
-            logger = logging.getLogger("package_app")
-            logger.setLevel(logging.INFO)
-            logger.addHandler(queue_handler)
+        # Output path
+        dir_name = os.path.dirname(app_file)
+        base_name = os.path.basename(app_file).split('.zip')[0]
+        output_path = '%s/%s' % (dir_name, base_name)
 
-            # Initialize progress dialog
-            self.progress_dialog = ThreadProgressDialog(
-                window_title='Packaging app...',
-                min_pbar_value=0, max_pbar_value=100,
-                theme_colors=self.theme_colors)
-            self.progress_dialog.done.connect(self.installation_finished)
-            self.progress_dialog.show()
+        # Create queue logger
+        log_queue = queue.Queue(-1)
+        queue_handler = QueueHandler(log_queue)
+        logger = logging.getLogger("package_app")
+        logger.setLevel(logging.INFO)
+        logger.addHandler(queue_handler)
 
-            # Package function
-            th = threading.Thread(
-                target=self.apps_manager.package_app,
-                args=(app_key, output_path, logger, self.progress_dialog))
-            th.start()
+        # Initialize progress dialog
+        self.progress_dialog = ThreadProgressDialog(
+            window_title='Packaging app...',
+            min_pbar_value=0, max_pbar_value=100,
+            theme_colors=self.theme_colors)
+        self.progress_dialog.done.connect(self.installation_finished)
+        self.progress_dialog.show()
+
+        # Package function
+        th = threading.Thread(
+            target=self.apps_manager.package_app,
+            args=(app_key, included_files, output_path, logger,
+                  self.progress_dialog))
+        th.start()
 
     @exceptions.error_handler(scope='general')
     def uninstall_app(self, app_key):
@@ -760,6 +765,122 @@ class AppsPanelWidget(QWidget, ui_plots_panel_widget):
             'study_info': None
         }
         return rec_info
+
+
+class AppBundleDialog(dialogs.MedusaDialog):
+
+    def __init__(self, app_path, theme_colors=None):
+        self.app_path = app_path
+        super().__init__('Package app', theme_colors=theme_colors)
+        # Qt window params
+        screen_geometry = self.screen().availableGeometry()
+        width = max(screen_geometry.width() // 6, 600)
+        height = max(screen_geometry.height() // 3, 500)
+        self.resize(width, height)
+
+    def create_layout(self):
+        layout = QVBoxLayout()
+
+        info_label = QLabel('Check the files and folders that '
+                            'will be INCLUDED in the package:')
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        self.tree_widget = QTreeWidget()
+        self.tree_widget.setHeaderHidden(True)
+        layout.addWidget(self.tree_widget)
+
+        # Populate
+        self.populate_tree(self.app_path, self.tree_widget.invisibleRootItem())
+
+        # Output file selection
+        file_layout = QHBoxLayout()
+        default_name = f"{os.path.basename(self.app_path)}.zip"
+        default_path = os.path.abspath(
+            os.path.join(os.getcwd(), '../apps/', default_name))
+
+        self.file_path_line_edit = QLineEdit(default_path)
+        file_layout.addWidget(self.file_path_line_edit)
+
+        browse_btn = QToolButton()
+        browse_btn.setIcon(gu.get_icon("search.svg", self.theme_colors))
+        browse_btn.clicked.connect(self.browse_output_file)
+        file_layout.addWidget(browse_btn)
+
+        layout.addLayout(file_layout)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        return layout
+
+    def populate_tree(self, path, parent_item, check_item=True):
+
+        items = os.listdir(path)
+        items.sort()
+        exclusions = [
+            '.idea', '.vscode',     # IDE folders
+            '.gitignore', '.git',   # Git files/folders
+            '__pycache__', '*.pyc'  # Python cache files
+        ]
+        for item_name in items:
+            item_path = os.path.join(path, item_name)
+            tree_item = QTreeWidgetItem(parent_item, [item_name])
+            tree_item.setFlags(
+                tree_item.flags() | Qt.ItemIsUserCheckable |
+                Qt.ItemIsAutoTristate)
+
+            # Determine if this item should be checked
+            # It inherits the check state from parent decision (check_item)
+            # AND it must not be in the exclusion list
+            is_excluded = False
+            for pattern in exclusions:
+                if fnmatch.fnmatch(item_name, pattern):
+                    is_excluded = True
+                    break
+            should_check = check_item and not is_excluded
+
+            if should_check:
+                tree_item.setCheckState(0, Qt.Checked)
+            else:
+                tree_item.setCheckState(0, Qt.Unchecked)
+
+            tree_item.setData(0, Qt.UserRole, item_path)
+
+            if os.path.isdir(item_path):
+                self.populate_tree(item_path, tree_item,
+                                   check_item=should_check)
+
+    def get_included_files(self):
+        included = []
+        it = QTreeWidgetItemIterator(
+            self.tree_widget, QTreeWidgetItemIterator.Checked)
+        while it.value():
+            item = it.value()
+            full_path = item.data(0, Qt.UserRole)
+            if full_path:
+                rel_path = os.path.relpath(full_path, self.app_path)
+                included.append(rel_path)
+            it += 1
+        return included
+
+    def browse_output_file(self):
+        filt = "MEDUSA app (*.zip)"
+        directory = self.file_path_line_edit.text()
+        app_file = QFileDialog.getSaveFileName(caption="Make app bundle",
+                                               dir=directory,
+                                               filter=filt,
+                                               parent=self)[0]
+        if app_file:
+            self.file_path_line_edit.setText(app_file)
+
+    def get_app_file(self):
+        return self.file_path_line_edit.text()
+
 
 
 class AppsPanelGridWidget(QWidget):

@@ -13,7 +13,7 @@ This css sheet contains the style of Medusa Qt elements. Index:
          1.10 QToolButton
          1.11 QToolAction
          1.12 QProgressBar
-         1.13 QAction
+         1.13 QTreeWidget
     2.  APPLICATIONS WIDGET
     3.  LOG WIDGET
     4.  PLOTS WIDGET
@@ -440,7 +440,37 @@ QProgressBar::chunk{
     background: @THEME_TEXT_ACCENT;
 }
 
-/*1.13 QAction -------------------------------------------------------------- */
+/*1.13 QTreeWidget ---------------------------------------------------------- */
+
+
+QTreeWidget {
+    color: @THEME_TEXT_LIGHT;
+    background-color: @THEME_BG_MID;
+    border: 1px solid @THEME_TEXT_DARK;
+    outline: 0;
+}
+
+QTreeWidget::item {
+    color: @THEME_TEXT_LIGHT;
+    padding: 2px;
+}
+
+QTreeWidget::item:selected {
+    background-color: @THEME_MENU_SELECTED;
+    color: @THEME_TEXT_LIGHT;
+}
+
+QTreeWidget::item:hover {
+    background-color: @THEME_BG_SELECTED;
+    color: @THEME_TEXT_LIGHT;
+}
+
+QHeaderView::section {
+    background-color: @THEME_BG_DARK;
+    color: @THEME_TEXT_LIGHT;
+    border: 1px solid @THEME_TEXT_DARK;
+    padding: 4px;
+}
 
 /* =============================================================================
 2. APPLICATIONS WIDGET
