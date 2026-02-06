@@ -13,8 +13,8 @@ from gui import gui_utils
 
 
 # PREDEFINED DIALOG GUIS
-gui_about = loadUiType(os.getcwd() + "/gui/ui_files/about.ui")[0]
-gui_about_app = loadUiType(os.getcwd() + "/gui/ui_files/about_app.ui")[0]
+gui_about = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "about.ui"))[0]
+gui_about_app = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "about_app.ui"))[0]
 
 
 class MedusaDialog(QDialog):
@@ -29,7 +29,7 @@ class MedusaDialog(QDialog):
             self.theme_colors = gui_utils.get_theme_colors('dark') if \
                 theme_colors is None else theme_colors
             self.stl = gui_utils.set_css_and_theme(self, self.theme_colors)
-            self.setWindowIcon(QIcon('gui/images/medusa_task_icon.png'))
+            self.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
             self.setWindowTitle(window_title)
             if pos_x is not None and pos_y is not None:
                 self.move(pos_x, pos_y)
@@ -71,8 +71,7 @@ def confirmation_dialog(text, title, informative_text=None, theme_colors=None,
     msg.setWindowTitle(title)
     msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
     if icon_path is None:
-        msg.setWindowIcon(QIcon(os.getcwd() +
-                                '/gui/images/medusa_task_icon.png'))
+        msg.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
     else:
         msg.setWindowIcon(QIcon(icon_path))
     msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -100,7 +99,7 @@ def info_dialog(message, title, theme_colors=None):
     msg.setText(message)
     msg.setWindowTitle(title)
     msg.setStandardButtons(QMessageBox.Ok)
-    msg.setWindowIcon(QIcon(os.getcwd() + '/gui/images/medusa_task_icon.png'))
+    msg.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
     msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
     theme_colors = gui_utils.get_theme_colors('dark') if \
         theme_colors is None else theme_colors
@@ -122,7 +121,7 @@ def error_dialog(message, title, theme_colors=None):
     msg.setText(message)
     msg.setWindowTitle(title)
     msg.setStandardButtons(QMessageBox.Ok)
-    msg.setWindowIcon(QIcon(os.getcwd() + '/gui/images/medusa_task_icon.png'))
+    msg.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
     msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
     theme_colors = gui_utils.get_theme_colors('dark') if \
         theme_colors is None else theme_colors
@@ -144,7 +143,7 @@ def warning_dialog(message, title, theme_colors=None):
     msg.setText(message)
     msg.setWindowTitle(title)
     msg.setStandardButtons(QMessageBox.Ok)
-    msg.setWindowIcon(QIcon(os.getcwd() + '/gui/images/medusa_task_icon.png'))
+    msg.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
     msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
     theme_colors = gui_utils.get_theme_colors('dark') if \
         theme_colors is None else theme_colors
@@ -339,7 +338,7 @@ class AboutDialog(QDialog, gui_about):
         self.setupUi(self)
         theme_colors = gui_utils.get_theme_colors('dark')
         self.stl = gui_utils.set_css_and_theme(self, theme_colors)
-        self.setWindowIcon(QIcon('gui/images/medusa_task_icon.png'))
+        self.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
         self.setWindowTitle('About MEDUSA©')
 
         # Details
@@ -382,7 +381,7 @@ class AboutAppDialog(QDialog, gui_about_app):
         self.resize(800, 325)
         theme_colors = gui_utils.get_theme_colors('dark')
         self.stl = gui_utils.set_css_and_theme(self, theme_colors)
-        self.setWindowIcon(QIcon('gui/images/medusa_task_icon.png'))
+        self.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
         self.setWindowTitle('About')
         dev_app = app_info['compilation-date'] == 'development'
         # Icon

@@ -18,10 +18,8 @@ from gui.lsl_config.channel_selection_dialogs import (
     LSLEEGChannelSelection, LSLGeneralChannelSelection)
 
 # Load the .ui files
-ui_main_dialog = loadUiType(
-    'gui/ui_files/lsl_config_dialog.ui')[0]
-ui_stream_config_dialog = loadUiType(
-    'gui/ui_files/lsl_config_medusa_params_dialog.ui')[0]
+ui_main_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "lsl_config_dialog.ui"))[0]
+ui_stream_config_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "lsl_config_medusa_params_dialog.ui"))[0]
 
 
 class LSLConfigDialog(QtWidgets.QDialog, ui_main_dialog):

@@ -1,6 +1,6 @@
 :: ===========================================================================================================================
 :: Activate environment and execute main.py
-call "venv\Scripts\activate"
+call ".vvenv\Scripts\activate"
 IF %ERRORLEVEL% NEQ 0 GOTO activateError
 :: Change directory to src
 cd "src"

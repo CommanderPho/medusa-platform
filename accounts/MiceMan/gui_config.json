@@ -1,0 +1,21 @@
+{
+    "width": 2880,
+    "height": 1590,
+    "position": [
+        890,
+        257
+    ],
+    "splitter_ratio": [
+        0.3598603839441536,
+        0.6401396160558465
+    ],
+    "splitter_2_ratio": [
+        0.27994616419919244,
+        0.7200538358008075
+    ],
+    "maximized": false,
+    "screen_idx": 1,
+    "study_mode": false,
+    "dev_mode": false,
+    "theme": "dark"
+}

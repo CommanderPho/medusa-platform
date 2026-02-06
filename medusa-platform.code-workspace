@@ -1,0 +1,58 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../PyQtInspect-Open"
+		}
+	],
+	"settings": {
+		"workbench.colorTheme": "Default Dark+",
+		"workbench.colorCustomizations": {
+			"titleBar.activeBackground": "#2d1b2e",
+			"titleBar.activeForeground": "#f8b4d4",
+			"activityBar.background": "#1e121f",
+			"activityBar.foreground": "#f8b4d4",
+			"activityBar.inactiveForeground": "#b87a9a",
+			"sideBar.background": "#251a26",
+			"sideBar.foreground": "#e8c4d8",
+			"sideBarSectionHeader.background": "#2d1b2e",
+			"sideBarSectionHeader.foreground": "#f8b4d4",
+			"list.activeSelectionBackground": "#4a2d4a",
+			"list.activeSelectionForeground": "#ffffff",
+			"list.hoverBackground": "#3d243d",
+			"list.inactiveSelectionBackground": "#3d243d",
+			"list.focusBackground": "#4a2d4a",
+			"statusBar.background": "#2d1b2e",
+			"statusBar.foreground": "#f8b4d4",
+			"statusBarItem.hoverBackground": "#3d243d",
+			"tab.activeBackground": "#2d1b2e",
+			"tab.activeForeground": "#f8b4d4",
+			"tab.inactiveBackground": "#1e121f",
+			"tab.inactiveForeground": "#b87a9a",
+			"tab.border": "#4a2d4a",
+			"editor.background": "#1a121b",
+			"editorGroupHeader.tabsBackground": "#251a26",
+			"focusBorder": "#e91e8c",
+			"button.background": "#c2185b",
+			"button.foreground": "#ffffff",
+			"button.hoverBackground": "#e91e8c",
+			"input.background": "#251a26",
+			"input.border": "#4a2d4a",
+			"input.foreground": "#e8c4d8",
+			"scrollbarSlider.background": "#4a2d4a80",
+			"scrollbarSlider.hoverBackground": "#6b3d6b80",
+			"scrollbarSlider.activeBackground": "#8b4d8b80"
+		},
+		"editor.tokenColorCustomizations": {
+			"comments": "#b87a9a",
+			"strings": "#f48fb1",
+			"keywords": "#f8b4d4",
+			"functions": "#f06292",
+			"numbers": "#e91e8c",
+			"variables": "#e8c4d8",
+			"types": "#f8b4d4"
+		}
+	}
+}

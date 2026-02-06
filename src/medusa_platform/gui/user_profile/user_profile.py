@@ -11,7 +11,7 @@ from gui.qt_widgets.notifications import NotificationStack
 import constants
 
 # Load the .ui files
-ui_main_dialog = loadUiType('gui/ui_files/user_profile_dialog.ui')[0]
+ui_main_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "user_profile_dialog.ui"))[0]
 
 
 class UserProfileDialog(QtWidgets.QDialog, ui_main_dialog):

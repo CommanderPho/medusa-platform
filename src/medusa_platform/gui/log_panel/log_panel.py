@@ -1,4 +1,5 @@
 # EXTERNAL MODULES
+import os
 from PySide6.QtUiTools import loadUiType
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
@@ -8,7 +9,7 @@ from gui import gui_utils as gu
 import constants, exceptions
 
 
-ui_plots_panel_widget = loadUiType('gui/ui_files/log_panel_widget.ui')[0]
+ui_plots_panel_widget = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "log_panel_widget.ui"))[0]
 
 
 class LogPanelWidget(QWidget, ui_plots_panel_widget):

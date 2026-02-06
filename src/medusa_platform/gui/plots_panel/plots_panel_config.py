@@ -23,7 +23,7 @@ from gui import gui_utils as gu
 from gui.plots_panel import real_time_plots
 
 # Load the .ui files
-ui_plot_config_dialog = loadUiType("gui/ui_files/plot_config_dialog.ui")[0]
+ui_plot_config_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "plot_config_dialog.ui"))[0]
 
 
 class DropToolButton(QToolButton):

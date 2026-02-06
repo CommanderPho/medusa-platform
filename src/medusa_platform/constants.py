@@ -41,7 +41,11 @@ MEDUSA_LSL_TYPES: dict
 
 """
 
+import os
+
 # =============================== DEFAULT PATHS ============================== #
+# Source root (src directory), so paths work when run from repo root or from src/
+SRC_ROOT = os.path.dirname(os.path.abspath(__file__))
 # Config files
 LSL_CONFIG_FILE = 'lsl_config.json'
 PLOTS_CONFIG_FILE = 'plots_config.json'

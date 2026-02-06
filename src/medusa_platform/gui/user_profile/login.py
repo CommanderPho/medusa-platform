@@ -12,7 +12,7 @@ import exceptions
 import constants
 
 # Load the .ui files
-ui_main_dialog = loadUiType('gui/ui_files/login_dialog.ui')[0]
+ui_main_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "login_dialog.ui"))[0]
 
 
 class LoginDialog(QtWidgets.QDialog, ui_main_dialog):

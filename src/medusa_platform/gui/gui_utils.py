@@ -364,10 +364,7 @@ def set_css_and_theme(gui_handle, theme_colors, stylesheet_path=None):
         Gui stylesheet.
     """
     if stylesheet_path is None:
-        start_dir = os.getcwd()
-        end_dir = os.path.dirname(__file__)
-        gui_dir_rel_path = os.path.relpath(end_dir, start=start_dir)
-        stylesheet_rel_path = '%s/style.css' % gui_dir_rel_path
+        stylesheet_rel_path = os.path.join(constants.SRC_ROOT, "gui", "style.css")
     else:
         stylesheet_rel_path = stylesheet_path
     stl = load_stylesheet(stylesheet_rel_path)
@@ -423,9 +420,9 @@ def get_icon(icon_name, theme_colors=None, enabled=True, custom_color=None):
         theme_colors = get_theme_colors('dark')
 
     # Does it exist?
-    rel_path = "%s/icons/svg/%s" % (constants.IMG_FOLDER, icon_name)
-    if not os.path.isfile(rel_path):
-        raise FileNotFoundError('Icon %s not found!' % rel_path)
+    icon_path = os.path.join(constants.SRC_ROOT, constants.IMG_FOLDER, "icons", "svg", icon_name)
+    if not os.path.isfile(icon_path):
+        raise FileNotFoundError('Icon %s not found!' % icon_path)
 
     # Get the icon colors (gradient)
     if enabled:
@@ -441,7 +438,7 @@ def get_icon(icon_name, theme_colors=None, enabled=True, custom_color=None):
         color_end = custom_color
 
     # Read the SVG data
-    fin = open(rel_path, "rt")
+    fin = open(icon_path, "rt")
     data = fin.read()
     fin.close()
 
@@ -470,9 +467,9 @@ def get_icon(icon_name, theme_colors=None, enabled=True, custom_color=None):
         data = data.replace('<path ', '<path fill="%s" ' % fill_str)
 
     # Write it in the file
-    fin = open(rel_path, "wt")
+    fin = open(icon_path, "wt")
     fin.write(data)
     fin.close()
 
     # Return the icon
-    return QIcon(rel_path)
+    return QIcon(icon_path)

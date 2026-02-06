@@ -17,7 +17,7 @@ from gui.qt_widgets import dialogs
 import constants, exceptions
 
 
-ui_plots_panel_widget = loadUiType('gui/ui_files/studies_panel_widget.ui')[0]
+ui_plots_panel_widget = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "studies_panel_widget.ui"))[0]
 
 
 class StudiesPanelWidget(QWidget, ui_plots_panel_widget):

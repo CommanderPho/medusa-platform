@@ -9,7 +9,7 @@ from gui.qt_widgets import dialogs
 import constants
 
 # Load the .ui files
-create_app_dialog = loadUiType('gui/ui_files/create_app_dialog.ui')[0]
+create_app_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "create_app_dialog.ui"))[0]
 
 
 class CreateAppDialog(QtWidgets.QDialog, create_app_dialog):

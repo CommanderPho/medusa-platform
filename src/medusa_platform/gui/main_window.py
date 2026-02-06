@@ -1,5 +1,6 @@
 # PYTHON MODULES
 import glob
+import os
 import multiprocessing as mp
 import json, traceback
 import ctypes
@@ -11,6 +12,7 @@ import sys
 from PySide6.QtGui import *
 
 # MEDUSA
+import constants
 import resources, exceptions, accounts_manager, app_manager
 import updates_manager
 import utils
@@ -28,7 +30,7 @@ from gui.qt_widgets.dialogs import *
 from gui.qt_widgets.dialogs import ThreadProgressDialog
 
 # Load the .ui file
-gui_main_user_interface = loadUiType("gui/ui_files/main_window.ui")[0]
+gui_main_user_interface = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "main_window.ui"))[0]
 
 
 class GuiMainClass(QMainWindow, gui_main_user_interface):
@@ -1361,7 +1363,7 @@ class SplashScreen:
         """ Sets the initial splash screen while it loads things."""
         # Attaching the splash image
         self.release_info = release_info
-        img_path = glob.glob('gui/images/medusa_splash.png')[0]
+        img_path = os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_splash.png")
         splash_image = QPixmap(img_path)
         self.splash_screen = QSplashScreen(splash_image)
         self.splash_screen.setStyleSheet("QSplashScreen { margin-right: 0px; "
