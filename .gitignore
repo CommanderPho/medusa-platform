@@ -139,3 +139,6 @@ lsl/*
 version
 
 
+Medusa_Analyzer/Analyzer/medusa-analyzer/
+Medusa_Analyzer/Kernel/medusa-kernel/
+.specstory/.project.json
