@@ -220,27 +220,101 @@ class AppManager:
         self.apps_dict[info['id']] = info
         self.update_apps_file()
 
-    def package_app(self, app_key, output_path, logger, progress_dialog):
-        # Get input dir
-        input_dir = '%s/%s' % (self.apps_folder, app_key)
-        # Get number of files in directory and subdirectories
-        n_files = sum(len(files) for _, _, files in os.walk(input_dir))
-        n_files += sum(len(dirnames) for _, dirnames, _ in os.walk(input_dir))
-        # Start event listener
-        th = threading.Thread(target=self.package_event_listener,
-                              args=(n_files, logger, progress_dialog))
-        th.start()
-        # Start packaging
-        shutil.make_archive(base_name=output_path,
-                            format='zip',
-                            root_dir=input_dir,
-                            logger=logger)
-        th.join()
+    # def package_app(self, app_key, included_files, output_path, logger,
+    #                 progress_dialog):
+    #     # Get input dir
+    #     input_dir = '%s/%s' % (self.apps_folder, app_key)
+    #     # Get number of files in directory and subdirectories
+    #     n_files = sum(len(files) for _, _, files in os.walk(input_dir))
+    #     n_files += sum(len(dirnames) for _, dirnames, _ in os.walk(input_dir))
+    #     # Start event listener
+    #     th = threading.Thread(target=self.package_event_listener,
+    #                           args=(n_files, logger, progress_dialog))
+    #     th.start()
+    #     # Start packaging
+    #     shutil.make_archive(base_name=output_path,
+    #                         format='zip',
+    #                         root_dir=input_dir,
+    #                         logger=logger)
+    #     th.join()
+
+    def package_app(self, app_key, included_files, output_path, logger,
+                    progress_dialog):
+        """ Packages the app into a zip file using a temporary directory to
+        ensure only selected files are included.
+        """
+        app_path = os.path.join(self.apps_folder, app_key)
+        temp_dir = None
+
+        try:
+            # Init progress dialog
+            progress_dialog.update_value(0)
+            progress_dialog.update_action("Preparing files...")
+            progress_dialog.update_log("Created temp folder...")
+
+            # 1. Create a temporary directory
+            temp_dir = tempfile.mkdtemp()
+            total_items = len(included_files)
+            progress_dialog.update_log(f"Files to include in the app bundle:"
+                                       f" {total_items}")
+
+            # 2. Copy selected files to the temporary directory
+            for i, rel_path in enumerate(included_files):
+                src = os.path.join(app_path, rel_path)
+                dst = os.path.join(temp_dir, rel_path)
+
+                # Update progress (0% to 50%)
+                progress = int((i / total_items) * 40)
+                progress_dialog.update_value(progress)
+                progress_dialog.update_log(f"Copying {rel_path}...")
+
+                if os.path.isdir(src):
+                    os.makedirs(dst, exist_ok=True)
+                else:
+                    # Ensure parent directory exists for the file
+                    parent_dir = os.path.dirname(dst)
+                    if not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir, exist_ok=True)
+                    shutil.copy2(src, dst)
+
+            # 3. Create the archive
+            progress_dialog.update_value(40)
+            progress_dialog.update_action("Creating app bundle...")
+
+            # Start event listener
+            th = threading.Thread(target=self.package_event_listener,
+                                  args=(total_items, logger, progress_dialog))
+            th.start()
+            # Start packaging
+            shutil.make_archive(base_name=output_path,
+                                format='zip',
+                                root_dir=temp_dir,
+                                logger=logger)
+            th.join()
+            progress_dialog.update_value(90)
+
+        except Exception as e:
+            progress_dialog.update_log('ERROR: %s' % str(e), style='error')
+            progress_dialog.finish()
+            self.handle_exception(e)
+
+        finally:
+            # 4. Clean up temporary directory
+            if temp_dir and os.path.exists(temp_dir):
+                progress_dialog.update_action("Cleaning up...")
+                shutil.rmtree(temp_dir)
+                progress_dialog.update_log("Temporary workspace cleaned.")
+
+            progress_dialog.update_action('Finished!')
+            progress_dialog.update_value(100)
+            progress_dialog.finish()
 
     def package_event_listener(self, n_files, logger, progress_dialog):
         try:
             # Read logger events
             progress_dialog.update_action('Creating app bundle...')
+            progress_init_value = progress_dialog.progress_bar.value()
+            left_pct = 90 - progress_init_value
             num_files_packaged = 0
             while num_files_packaged < n_files:
                 time.sleep(0.1)
@@ -249,10 +323,8 @@ class AppManager:
                     progress_dialog.update_log(
                         logger.handlers[0].queue.get().getMessage())
                     progress_dialog.update_value(
-                        int(num_files_packaged / n_files * 100))
-            progress_dialog.update_value(100)
-            progress_dialog.update_action('Finished!')
-            progress_dialog.finish()
+                        int(progress_init_value +
+                            (num_files_packaged / n_files * left_pct)))
         except Exception as e:
             progress_dialog.update_log('ERROR: %s' % str(e), style='error')
             progress_dialog.finish()

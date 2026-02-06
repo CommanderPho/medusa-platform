@@ -6,20 +6,23 @@ import time
 # EXTERNAL MODULES
 import numpy as np
 from PySide6.QtCore import *
-from PySide6.QtGui import QFont, QAction
-from fontTools.merge.util import current_time
+from PySide6.QtGui import QAction
 from scipy import signal as scp_signal, interpolate
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.cm import get_cmap
 from matplotlib import transforms as mtransforms
+import matplotlib.pyplot as plt
 
 # MEDUSA-PLATFORM MODULES
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal.windows import hann
+from scipy.signal import ShortTimeFFT
 from acquisition import lsl_utils
 from gui import gui_utils
 import constants, exceptions
 
-# MEDUSA-CORE MODULES
+# MEDUSA-KERNEL MODULES
 import medusa
 from medusa import meeg
 from medusa.transforms import power_spectral_density, fourier_spectrogram
@@ -27,6 +30,7 @@ from medusa.local_activation import spectral_parameteres
 from medusa.connectivity import amplitude_connectivity, phase_connectivity
 from medusa.plots import head_plots
 from medusa.settings_schema import *
+from medusa.utils import check_dimensions
 
 
 class BaseSignalSettings(SettingsTree):
@@ -176,38 +180,58 @@ class BaseSignalSettings(SettingsTree):
             "time_window",
             value=5.0,
             value_range=[0, None],
-            info="Duration (s) of data kept in the rolling buffer.",
+            info="Time window to calculate the spectrogram in seconds.",
         )
         spectrogram.add_item(
-            "overlap_pct",
-            value=90.0,
-            value_range=[0, 100],
-            info="Segment overlap (%) used in the STFT/Welch computation.",
+            "log_power", value=True,
+            info="If True, the spectrogram is displayed in dB (10 * log10)."
         )
-        spectrogram.add_item(
-            "scale_to",
-            value="psd",
-            value_options=["psd", "magnitude"],
-            info=(
-                "Output scaling for the spectrogram: power spectral density ('psd') "
-                "or linear magnitude ('magnitude')."
-            ),
+
+        freq_smooth = spectrogram.add_item(
+            "freq_smooth",
+            info="Gaussian filter to smooth the frequency axis",
         )
-        spectrogram.add_item(
-            "smooth",
+        freq_smooth.add_item(
+            "apply",
             value=True,
-            info="Apply a Gaussian filter to smooth the spectrogram.",
+            info="Apply the gaussian filter",
         )
-        spectrogram.add_item(
-            "smooth_sigma",
-            value=2.0,
+        freq_smooth.add_item(
+            "sigma",
+            value=1,
             value_range=[0, None],
-            info="Sigma of the Gaussian smoothing kernel (in pixels).",
+            info="Sigma parameter of the gaussian filter.",
         )
-        spectrogram.add_item(
-            "log_power",
+
+        time_smooth = spectrogram.add_item(
+            "time_smooth",
+            info="Exponential moving average (EMA) to smooth the temporal axis",
+        )
+        time_smooth.add_item(
+            "apply",
             value=True,
-            info="Display power on a logarithmic scale (log-power).",
+            info="Apply EMA smoothing",
+        )
+        time_smooth.add_item(
+            "alpha",
+            value=0.01,
+            value_range=[0, None],
+            info="Alpha parameter for EMA computation.",
+        )
+
+        spectral_edge_freq = spectrogram.add_item(
+            "spectral_edge_freq",
+            info="Spectral edge frequency.",
+        )
+        spectral_edge_freq.add_item(
+            "show",
+            value=True,
+            info="Display as a line a percentile of power.",
+        )
+        spectral_edge_freq.add_item(
+            "percentile",
+            value=95.0,
+            info="Percentile value (%).",
         )
 
 class BaseVisualizationSettings(SettingsTree):
@@ -404,9 +428,13 @@ class RealTimePlot(ABC):
         self.widget = None
         self.fig = None
         self.ax = None
+        self.chunk_cnt = 0
+        self.last_chunk_n_samp_received = None
+        self.last_chunk_n_samp_discarded = None
         self.times_buffer = None
         self.data_buffer = None
         self.buffer_time = None
+        self.window_time = None
         self.x_in_graph = None
         self.y_in_graph = None
         self.l_cha = None
@@ -603,6 +631,8 @@ class RealTimePlot(ABC):
         return False
 
     def update_plot_buffers(self, chunk_times, chunk_signal):
+        # Number of new samples
+        n_samp = chunk_times.shape[0]
         # Shift times so that they are relative to init_time
         rel_times = chunk_times - self.init_time
         # Append data to buffers
@@ -611,6 +641,7 @@ class RealTimePlot(ABC):
         # Remove old data from buffers
         min_t = self.times_buffer[-1] - self.buffer_time
         idx_to_keep = self.times_buffer >= min_t
+        self.last_chunk_n_samp_discarded = np.sum(~idx_to_keep)
         self.times_buffer = self.times_buffer[idx_to_keep]
         self.data_buffer = self.data_buffer[idx_to_keep, :]
 
@@ -618,13 +649,15 @@ class RealTimePlot(ABC):
         # Initial setup at first call
         if self.init_time is None:
             self.init_time = chunk_times[0]
+        self.chunk_cnt += 1
+        self.last_chunk_n_samp_received = chunk_times.shape[0]
         # Append data to buffers
         self.update_plot_buffers(chunk_times, chunk_signal)
         # Return if not visible to save resources
         if not self.widget.isVisible():
             return
         # Update plot data
-        self.update_plot_data(chunk_times, chunk_signal)
+        self.update_plot_data()
         # Restore static elements from cache if possible
         if self.check_if_redraw_needed():
             self.draw()
@@ -684,7 +717,7 @@ class RealTimePlot(ABC):
         raise NotImplemented
 
     @abstractmethod
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         """Update the plot with the last chunk of signal received in the
         worker. Since this function is called recursively when a new chunk
         of signal is received, it must handle errors with the following block:
@@ -738,10 +771,10 @@ class TimeBasedPlot(RealTimePlot):
                 # x = np.mod(self.x_in_graph, self.buffer_time)
                 x = self.x_in_graph
                 # Range
-                n_win = self.t_in_graph.max() // self.buffer_time
-                x_range = (x[0], self.buffer_time) if n_win == 0 else \
+                n_win = self.t_in_graph.max() // self.window_time
+                x_range = (x[0], self.window_time) if n_win == 0 else \
                     (self.x_in_graph[0], self.x_in_graph[-1])
-                x_range_real = (0, self.buffer_time) if n_win == 0 else \
+                x_range_real = (0, self.window_time) if n_win == 0 else \
                     (self.t_in_graph[0], self.t_in_graph[-1])
                 # Add invisible ticks to avoid movement of the axis
                 x_ticks_pos += x_range
@@ -752,7 +785,7 @@ class TimeBasedPlot(RealTimePlot):
                         x_range, x_ticks_pos, x_ticks_val, disp_labels=False)
         else:
             # Get range
-            x_range = (0, self.buffer_time)
+            x_range = (0, self.window_time)
             # Add range ticks
             x_ticks_pos += x_range
             x_ticks_val += ['%.1f' % v for v in x_range]
@@ -770,8 +803,8 @@ class TimeBasedPlot(RealTimePlot):
         # Useful params
         max_t = unrolled_t_in_graph.max(initial=0)
         # Get the cut time for the current window
-        t_cut = self.buffer_time * np.floor(max_t / self.buffer_time)
-        return max(t_cut, self.buffer_time)
+        t_cut = self.window_time * np.floor(max_t / self.window_time)
+        return max(t_cut, self.window_time)
 
     def roll_array(self, unrolled_t_in_graph, time_dist_array, time_axis=0):
         """
@@ -933,8 +966,9 @@ class TimePlotMultichannel(TimeBasedPlot):
         # Update variables
         self.cha_separation = self.visualization_settings.get_item_value(
             'y_axis', 'cha_separation')
-        self.buffer_time = self.visualization_settings.get_item_value(
+        self.window_time = self.visualization_settings.get_item_value(
             'x_axis', 'seconds_displayed')
+        self.buffer_time = self.window_time
 
         # INIT FIGURE ==========================================================
         # Place curves in plot
@@ -991,7 +1025,7 @@ class TimePlotMultichannel(TimeBasedPlot):
     def autoscale(self):
         scaling_sett = self.visualization_settings.get_item(
             'y_axis', 'autoscale')
-        y_std = np.std(self.data_in_graph)
+        y_std = np.std(self.y_in_graph)
         std_tol = scaling_sett.get_item_value('n_std_tolerance')
         std_factor = scaling_sett.get_item_value('n_std_separation')
         if y_std > self.cha_separation * std_tol or \
@@ -999,7 +1033,7 @@ class TimePlotMultichannel(TimeBasedPlot):
             self.cha_separation = std_factor * y_std
             self.draw_y_axis_ticks()
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         """This function updates the data in the graph. Notice that channel 0 is
         drawn up in the chart, whereas the last channel is in the bottom.
         """
@@ -1121,8 +1155,9 @@ class TimePlotSingleChannel(TimeBasedPlot):
             'init_channel_label')
         self.curr_cha = self.worker.receiver.get_channel_indexes_from_labels(
             init_cha_label)
-        self.buffer_time = self.visualization_settings.get_item_value(
+        self.window_time = self.visualization_settings.get_item_value(
             'x_axis', 'seconds_displayed')
+        self.buffer_time = self.window_time
 
         # INIT FIGURE ==========================================================
         # Set title with channel
@@ -1172,8 +1207,8 @@ class TimePlotSingleChannel(TimeBasedPlot):
 
     def autoscale(self):
         # Get statistics
-        y_mean = np.mean(self.data_in_graph[:, self.curr_cha - 1])
-        y_std = np.std(self.data_in_graph)
+        y_mean = np.mean(self.y_in_graph[:, self.curr_cha - 1])
+        y_std = np.std(self.y_in_graph)
         # Current limits
         curr_min, curr_max = self.y_range
         curr_span = max(curr_max - curr_min, 1e-12)
@@ -1202,7 +1237,7 @@ class TimePlotSingleChannel(TimeBasedPlot):
         self.ax.set_ylim(new_min, new_max)
         self.draw_y_axis_ticks()
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         # Set data
         mode = self.visualization_settings.get_item_value('mode')
         if mode == 'geek':
@@ -1353,8 +1388,9 @@ class PSDPlotMultichannel(FreqBasedPlot):
         self.cha_separation = \
             self.visualization_settings.get_item_value(
                 'y_axis', 'cha_separation')
-        self.buffer_time = self.signal_settings.get_item_value(
-            'psd', 'time_window')
+        self.window_time = self.visualization_settings.get_item_value(
+            'x_axis', 'seconds_displayed')
+        self.buffer_time = self.window_time
 
         # INIT FIGURE ==========================================================
         # Set the style for the curves
@@ -1402,7 +1438,7 @@ class PSDPlotMultichannel(FreqBasedPlot):
             self.cha_separation = std_factor * y_std
             self.draw_y_axis_ticks()
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         """
         This function updates the data in the graph. Notice that channel 0 is
         drawn up in the chart, whereas the last channel is in the bottom.
@@ -1512,8 +1548,9 @@ class PSDPlotSingleChannel(FreqBasedPlot):
             'init_channel_label')
         self.curr_cha = self.worker.receiver.get_channel_indexes_from_labels(
             init_cha_label)
-        self.buffer_time = self.signal_settings.get_item_value(
-            'psd', 'time_window')
+        self.window_time = self.visualization_settings.get_item_value(
+            'x_axis', 'seconds_displayed')
+        self.buffer_time = self.window_time
 
         # INIT FIGURE ==========================================================
         # Set title with channel
@@ -1555,7 +1592,7 @@ class PSDPlotSingleChannel(FreqBasedPlot):
             self.y_range[1] = std_factor * y_std
             self.draw_y_axis_ticks()
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         """
         This function updates the data in the graph. Notice that channel 0 is
         drew up in the chart, whereas the last channel is in the bottom.
@@ -1575,7 +1612,24 @@ class SpectrogramBasedPlot(TimeBasedPlot):
 
     def __init__(self, uid, plot_state, medusa_interface, theme_colors):
         super().__init__(uid, plot_state, medusa_interface, theme_colors)
+        # Init variables
+        self.fft_size = None
+        self.fft_hop = None
+        self.fft_window = None
+        self.fft_log_power = None
+        self.n_samp_accumulated = 0
+        self.n_samp_discarded = 0
         self.y_range = None
+        self.spec_buffer = None
+        self.spec_t_buffer = None
+        self.spec_f = None
+        self.apply_gaussian_smoothing = None
+        self.gaussian_smth_sigma = None
+        self.apply_ema_smoothing = None
+        self.ema_smth_alpha = None
+        self.show_sef = None
+        self.sef_pct = None
+        self.sef_buffer = None
 
     def draw_y_axis_ticks(self):
         tick_sep = self.visualization_settings.get_item_value(
@@ -1589,62 +1643,189 @@ class SpectrogramBasedPlot(TimeBasedPlot):
         self.ax.set_yticks(y_ticks_pos)
         self.ax.set_yticklabels(y_ticks_val)
 
-    def compute_spectrogram(self, cha_idx=None, log_power=False):
-        # Spectrogram computation time window
-        win_t_spec = self.signal_settings.get_item_value(
-            'spectrogram', 'time_window')
-        win_t_spec_s = (
-            int(self.signal_settings.get_item_value(
-                'spectrogram', 'time_window') * self.fs))
-        # Get spectrogram time window
-        curr_samples = len(self.times_buffer)
-        time_window = win_t_spec if curr_samples >= win_t_spec_s else (
-                curr_samples / self.fs)
-        # Select channels
-        _data_buffer = self.data_buffer
-        if cha_idx is not None:
-            _data_buffer = _data_buffer[:, cha_idx]
-        # Compute spectrogram
-        spec, t, f = fourier_spectrogram(
-            _data_buffer, self.fs,
-            time_window=time_window,
-            overlap_pct=self.signal_settings.get_item_value(
-                'spectrogram', 'overlap_pct'),
-            smooth=self.signal_settings.get_item_value(
-                'spectrogram', 'smooth'),
-            smooth_sigma=self.signal_settings.get_item_value(
-                'spectrogram', 'smooth_sigma'),
-            scale_to=self.signal_settings.get_item_value(
-                'spectrogram', 'scale_to')
-        )
-        # Optionally convert to log scale
-        if log_power:
-            spec = 10 * np.log10(np.maximum(spec, 1e-12))
-        # Get t_in_graph
-        t_start = self.times_buffer[0]
-        t_end = self.times_buffer[-1]
-        t_in_graph = np.linspace(t_start, t_end, len(t))
-        return spec, t_in_graph, f
+    def apply_window(self, data, widow_size):
+        if self.fft_window is None or len(self.fft_window) != widow_size:
+            self.fft_window = np.hanning(len(data))[:, np.newaxis]
+        return data * self.fft_window
 
+    def psd(self, data, fft_size, log_power=True, axis=0):
+        """
+        Returns: (magnitude_spectrum, current_timestamp)
+        """
+        # 2. Compute rfft (returns (N/2)+1 bins)
+        fft_complex = np.fft.rfft(data, n=fft_size, axis=axis)
+        psd = np.abs(fft_complex) ** 2
+        # 3. Get frequency bins
+        f = np.fft.rfftfreq(fft_size, d=1.0 / self.fs)
+        # 3. Optionally convert to log scale
+        if log_power:
+            psd = 10 * np.log10(np.maximum(psd, 1e-20))
+        return f, psd
+
+    @staticmethod
+    def spectral_edge_frequency(
+            psd, fs,
+            percentile=95.0,
+            target_band=None,
+            eps=1e-20):
+        # todo: replace for medusa-kernel function in future releases
+        psd = check_dimensions(psd)
+        if target_band is None:
+            target_band = (0, fs / 2)
+        target_band = np.asarray(target_band, dtype=float)
+        # Checks
+        if psd.ndim != 3:
+            raise ValueError(
+                "psd must have shape [n_epochs, n_freqs, n_channels]. "
+                "Use np.newaxis to expand missing dimensions."
+            )
+        if target_band.shape != (2,):
+            raise ValueError("target_band must be (low_freq, high_freq).")
+        if not (0.0 <= percentile <= 100.0):
+            raise ValueError("percentile must be between 0 and 100.")
+        # Frequency axis for a one-sided PSD
+        freqs = np.linspace(0, fs / 2, psd.shape[1])
+        # Band selection
+        idx = (freqs >= target_band[0]) & (freqs < target_band[1])
+        freqs_in_band = freqs[idx]
+        psd_band = np.maximum(psd[:, idx, :], 0.0)  # ensure non-negative power
+        # Total and cumulative power in band
+        total_power = np.sum(psd_band, axis=1)  # [n_epochs, n_channels]
+        cum_power = np.cumsum(psd_band,
+                              axis=1)  # [n_epochs, n_bins_in_band, n_channels]
+        # Target cumulative power
+        frac = percentile / 100.0
+        target = frac * total_power  # [n_epochs, n_channels]
+        # Handle near-zero power
+        valid = total_power > eps
+        # First index where cumulative >= target
+        ge = cum_power >= target[:, np.newaxis, :]  # broadcast target
+        sef_idx = np.argmax(ge,
+                            axis=1)  # [n_epochs, n_channels] (0 if all False)
+        # If all False because total_power ~ 0, mark invalid
+        sef = freqs_in_band[sef_idx]
+        sef = np.where(valid, sef, np.nan)
+        return sef
+
+    def update_spectrogram(self):
+        # 1. Prepare data with zero-padding if needed
+        n_samples_available = self.data_buffer.shape[0]
+        if n_samples_available < self.fft_size:
+            # Need padding
+            missing = self.fft_size - n_samples_available
+            # Pad with zeros at the beginning
+            # (assuming data_buffer is [timestamp, n_channels])
+            padding = np.zeros((missing, self.data_buffer.shape[1]))
+            data = np.vstack((padding, self.data_buffer))
+        else:
+            # Take just the last 'fft_size' samples
+            data = self.data_buffer[-self.fft_size:, :]
+        # 2. Windowing
+        windowed_data = self.apply_window(data, self.fft_size)
+        # 3. Compute PSD
+        f, psd = self.psd(windowed_data, self.fft_size,
+                          log_power=self.fft_log_power)
+        t = self.times_buffer[-1]
+        # 4. Smoothing
+        if self.apply_gaussian_smoothing:
+            sigma = self.gaussian_smth_sigma
+            psd = gaussian_filter1d(psd, sigma=sigma, axis=0)
+        psd = psd[:, np.newaxis, :]
+        # 5. Update buffers
+        if self.spec_buffer is None:
+            # Init buffer
+            self.spec_buffer = np.concatenate((psd, psd), axis=1)
+            self.spec_t_buffer = np.array([0, t])
+            self.spec_f = f
+        else:
+            # EMA smoothing
+            if self.apply_ema_smoothing:
+                prev_ema = self.spec_buffer[:, -1:, :]
+                ema_alpha = self.apply_ema_smoothing
+                psd = ((ema_alpha * psd) + ((1 - ema_alpha) * prev_ema))
+            self.spec_buffer = np.concatenate(
+                (self.spec_buffer, psd), axis=1)
+            self.spec_t_buffer = np.append(self.spec_t_buffer, t)
+            self.spec_f = f  # Usually static, but safe to update
+        # 7. Calculate spectral edge frequency
+        if self.show_sef:
+            psd_sef = psd
+            if self.fft_log_power:
+                psd_sef = 10 ** (psd / 10)
+            sef = self.spectral_edge_frequency(psd_sef[:, -1, :],
+                                               fs=self.fs,
+                                               percentile=self.sef_pct,
+                                               target_band=None)
+            if self.sef_buffer is None:
+                self.sef_buffer = np.concatenate(
+                    (np.zeros_like(sef), sef), axis=0)
+            else:
+                self.sef_buffer = np.concatenate(
+                    (self.sef_buffer, sef), axis=0)
+
+        # 6. Trim old data from visible window
+        min_t = t - self.window_time
+        keep_mask = (self.spec_t_buffer >= min_t)
+        self.spec_t_buffer = self.spec_t_buffer[keep_mask]
+        self.spec_buffer = self.spec_buffer[:, keep_mask, :]
+        if self.show_sef:
+            self.sef_buffer = self.sef_buffer[keep_mask, :]
+        return self.spec_buffer, self.spec_t_buffer, self.spec_f, self.sef_buffer
 
 class SpectrogramPlot(SpectrogramBasedPlot):
     """
-    A real-time spectrogram widget for time-frequency visualization of incoming data.
+    Real-time time–frequency (spectrogram) visualization widget.
+
+    This plot consumes streaming data (typically via an LSL receiver handled by the
+    base class) and renders a spectrogram for a selected channel, optionally with
+    temporal/frequency smoothing and an auxiliary “spectral edge” curve.
+
+    Two visualization modes are supported (from BaseVisualizationSettings):
+    - "geek": linear time axis (absolute/monotonic time on X).
+    - "clinical": cyclic/rolled time axis (time wraps modulo seconds_displayed),
+      with a moving marker.
+
+    Z-axis (color) scaling:
+    - Manual: fixed z_axis.range (clim) or interactive percentile limits via wheel.
+    - Autoscale: compute clim from percentiles of the current spectrogram buffer.
+
+    Mouse interaction (when autoscale is OFF):
+    - Wheel (no modifier): zoom percentile span (narrow/widen).
+    - Shift + wheel: adjust upper percentile limit (p_max).
+    - Ctrl  + wheel: adjust lower percentile limit (p_min).
+
+    Notes
+    -----
+    - If computational demand is too much for your computer high, increase
+    update rate
     """
 
     def __init__(self, uid, plot_state, medusa_interface, theme_colors):
         super().__init__(uid, plot_state, medusa_interface, theme_colors)
 
         # Spectrogram variables
+        self.time_window = None
         self.im = None
         self.curr_cha = None
-        self.spec_in_graph = None
+        self.apply_autoscale = None
+        self.autoscale_pct_lims = None
         self.c_lim = None
+        self.curves = None
+        self.curve_color = 'white'
+        self.curve_width = 2
+        self.spec_in_graph = None
+        self.spec_edge_in_graph = None
 
     def show_context_menu(self, pos: QPoint):
         """
-        Called automatically on right-click within the canvas.
-        pos is in widget coordinates, so we map it to global coords.
+        Display a context menu at the given widget position.
+
+        Parameters
+        ----------
+        pos : QPoint
+            Position in *widget coordinates* (as received from the Qt context
+            menu event). It is mapped to global coordinates before showing
+            the menu.
         """
         menu = SelectChannelMenu(self)
         menu.set_channel_list()
@@ -1653,49 +1834,86 @@ class SpectrogramPlot(SpectrogramBasedPlot):
 
     def mouse_wheel_event(self, event):
         """
-        Interactive zoom of the spectrogram amplitude range (color limits).
-        Behavior:
-          - Wheel up   → zoom in   (reduce span)
-          - Wheel down → zoom out  (increase span)
-          - Ctrl  + wheel  → fine zoom
-          - Shift + wheel  → coarse zoom
+        Adjust spectrogram color scaling using the mouse wheel.
 
-        Additional features:
-          - Automatically disables autoscaling when the user zooms manually.
-          - Synchronizes the updated CLIM with visualization_settings['z_axis']['range'].
+        Behavior
+        --------
+        If autoscale is enabled (z_axis.autoscale.apply == True), the wheel
+        interaction is ignored.
+
+        Otherwise, this method updates self.autoscale_pct_lims = [p_min, p_max]
+        (percentile limits) and converts them to clim via np.percentile on the
+        current spectrogram buffer.
+
+        Controls
+        --------
+        - No modifier: zoom percentile span
+            Wheel up   -> p_min += step, p_max -= step
+            Wheel down -> p_min -= step, p_max += step
+        - Shift: modify upper limit only (p_max)
+        - Ctrl:  modify lower limit only (p_min)
+
+        Safety
+        ------
+        - p_min and p_max are clamped to [0, 100]
+        - Updates are rejected if they would collapse the span below `step`
+          (i.e., do not allow p_min >= p_max).
         """
         # Checks
         if self.visualization_settings.get_item_value(
             'z_axis', 'autoscale', 'apply'):
             return
         # Get current lims
-        vmin, vmax = self.im.get_clim()
-        if not (np.isfinite(vmin) and np.isfinite(vmax)):
-            return
-        # Current center + span
-        center = 0.5 * (vmin + vmax)
-        span = max(vmax - vmin, 1e-12)
-        # Determine zoom factor
-        base = 1.1
-        # Determine new span
-        zoom_in = event.angleDelta().y() > 0
-        new_span = span / base if zoom_in else span * base
-        # Reconstruct new clim around center
-        new_vmin = center - 0.5 * new_span
-        new_vmax = center + 0.5 * new_span
-        # Ensure valid ordering and non-zero span
-        if new_vmax <= new_vmin:
-            eps = max(1e-12, abs(vmax - vmin) * 1e-6)
-            new_vmax = new_vmin + eps
+        p_min, p_max = self.autoscale_pct_lims
+        p_min_new, p_max_new = p_min, p_max
+        # Determine scroll direction and modifiers
+        inc = event.angleDelta().y() > 0
+        modifiers = event.modifiers()
+        # Step size (percentile points)
+        step = 1.0
+        if modifiers == Qt.NoModifier:
+            # 1) No function key: Zoom behavior
+            if inc:
+                # Wheel Up: Zoom In (narrow range) -> p_min +1, p_max -1
+                p_min_new += step
+                p_max_new -= step
+            else:
+                # Wheel Down: Zoom Out (widen range) -> p_min -1, p_max +1
+                p_min_new -= step
+                p_max_new += step
+        elif modifiers == Qt.ShiftModifier:
+            # Modify the upper limit
+            p_max_new = p_max_new + step if inc else p_max_new - step
+        elif modifiers == Qt.ControlModifier:
+            # Modify the upper limit
+            p_min_new = p_min_new + step if inc else p_min_new - step
+        # Clamp bounds to [0, 100]
+        p_min_new = max(0.0, min(100.0 - step, p_min_new))
+        p_max_new = max(0.0 + step, min(100.0, p_max_new))
+        # Ensure valid span (p_min < p_max).
+        if (p_max_new - p_min_new) >= step:
+            p_min, p_max = p_min_new, p_max_new
+        # Update settings (calls autoscale indirectly or directly if hooked)
+        self.autoscale_pct_lims = [p_min, p_max]
+        # Calculate limits based on percentiles
+        vmin, vmax = np.percentile(self.spec_buffer, self.autoscale_pct_lims)
         # Apply to image
-        self.im.set_clim(new_vmin, new_vmax)
-        self.c_lim = (new_vmin, new_vmax)
+        if self.im is not None:
+            self.im.set_clim(vmin, vmax)
+        self.c_lim = (vmin, vmax)
 
     @staticmethod
     def get_default_settings():
         """
-        Returns a tuple: (signal_settings, visualization_settings).
-        Adjust or rename keys to your needs.
+        Build default signal + visualization settings for this plot.
+
+        Returns
+        -------
+        (signal_settings, visualization_settings) : tuple
+            - signal_settings: includes spectrogram-specific parameters
+              (time window, smoothing, log power, etc.).
+            - visualization_settings: includes axes formatting, z-axis colormap,
+              autoscale configuration, and the initial channel selection key.
         """
         # Signal settings
         signal_settings = BaseSignalSettings()
@@ -1733,7 +1951,22 @@ class SpectrogramPlot(SpectrogramBasedPlot):
         # Z-axis
         visualization_settings.add_zaxis_settings(cmap="inferno",
                                                   range=[0.0, 1.0])
-        visualization_settings.add_autoscale_settings_to_axis("z_axis")
+        z_ax = visualization_settings.get_item("z_axis")
+        auto_scale = z_ax.add_item("autoscale")
+        auto_scale.add_item(
+            "apply",
+            value=False,
+            info="Automatically scale the z-axis.",
+        )
+        auto_scale.add_item(
+            "percentile_limits",
+            value=[0.1, 99.9],
+            value_range=[0, 100],
+            info=(
+                "Autoscale limits based on percentiles. It allows to discard "
+                "the outliers to increase visualization quality."
+            ),
+        )
         return signal_settings, visualization_settings
 
     @staticmethod
@@ -1767,36 +2000,65 @@ class SpectrogramPlot(SpectrogramBasedPlot):
 
     def init_plot(self):
         """
-        Initialize the spectrogram plot, figure, axes, etc.
-        This is called once, when the stream is first set up.
+        Initialize the Matplotlib artists and internal buffers.
+
+        This is called once after the data stream is known, and it:
+        - selects the initial channel,
+        - sets FFT configuration derived from settings (fft_size, hop, etc.),
+        - creates the main spectrogram artist (pcolormesh),
+        - creates optional overlay curves (e.g., spectral edge),
+        - configures axes ticks/layout depending on mode.
         """
 
         # INIT SIGNAL VARIABLES ================================================
 
-        # Get initial channel
         init_cha_label = self.visualization_settings.get_item_value(
             'init_channel_label')
         self.curr_cha = self.worker.receiver.get_channel_indexes_from_labels(
             init_cha_label)
-
-        # Visualization time window
-        self.buffer_time = self.visualization_settings.get_item_value(
+        self.time_window = self.signal_settings.get_item_value(
+            'spectrogram', 'time_window')
+        self.buffer_time = 2 * self.time_window
+        self.window_time = self.visualization_settings.get_item_value(
             'x_axis', 'seconds_displayed')
+        self.fft_size = int(self.time_window * self.fs)
+        self.fft_hop = self.fs
+
+        # Spectrogram specific parameters
+        self.fft_log_power = self.signal_settings.get_item_value(
+            'spectrogram', 'log_power')
+        self.apply_gaussian_smoothing = self.signal_settings.get_item_value(
+            'spectrogram', 'freq_smooth', 'apply')
+        self.gaussian_smth_sigma = self.signal_settings.get_item_value(
+            'spectrogram', 'freq_smooth', 'sigma')
+        self.apply_ema_smoothing = self.signal_settings.get_item_value(
+            'spectrogram', 'time_smooth', 'apply')
+        self.ema_smth_alpha = self.signal_settings.get_item_value(
+            'spectrogram', 'time_smooth', 'alpha')
+        self.show_sef = self.signal_settings.get_item_value(
+            "spectrogram", "spectral_edge_freq", "show")
+        self.sef_pct = self.signal_settings.get_item_value(
+            "spectrogram", "spectral_edge_freq", "percentile")
+
+        self.apply_autoscale = self.visualization_settings.get_item_value(
+            'z_axis', 'autoscale', 'apply')
+        self.autoscale_pct_lims = self.visualization_settings.get_item(
+            'z_axis', 'autoscale', 'percentile_limits').get_item_value()
+
+        # Reset buffers
+        self.spec_buffer = None
+        self.spec_f = None
+        self.spec_t_buffer = None
+        self.sef_buffer = None
 
         # INIT FIGURE ==========================================================
         # Set title with channel
         self.set_title(cha_name=init_cha_label)
-        # Display initial array
-        height, width = 1, 1
-        rgb_tuple = gui_utils.hex_to_rgb(
-            self.theme_colors['THEME_BG_MID'], scale=True)
-        solid_color = np.ones((height, width, 3)) * rgb_tuple
-        self.im = self.ax.imshow(
-            solid_color,
-            aspect='auto',
-            origin='lower',
-            animated=True,
-            zorder=0)
+        # Place spectral edge curve in plot
+        curve_style = {'color': self.curve_color,
+                       'linewidth': self.curve_width}
+        curve, = self.ax.plot([], [], animated=True, **curve_style)
+        self.curves = [curve]
         # Ticks params
         mode = self.visualization_settings.get_item_value('mode')
         if mode == 'geek':
@@ -1819,8 +2081,41 @@ class SpectrogramPlot(SpectrogramBasedPlot):
             'y_axis', 'range')
         if not isinstance(self.y_range, list):
             self.y_range = [0, self.y_range]
-        self.im.set_extent((0, self.buffer_time,
-                            self.y_range[0], self.y_range[1]))
+
+        # Color map
+        cmap = get_cmap(
+            self.visualization_settings.get_item_value('z_axis', 'cmap'))
+
+        # pcolormesh update (slower)
+        # ======================================================================
+        self.im = self.ax.pcolormesh(
+            np.array([0.0, 1.0]),  # X edges (len 2)
+            np.array([0.0, 1.0]),  # Y edges (len 2)
+            np.array([[0.0]]),  # C (1,1)
+            cmap=cmap,
+            shading='flat',
+            animated=True,
+            zorder=0)
+        # ======================================================================
+
+        # imshow update (faster)
+        # ======================================================================
+        # height, width = 1, 1
+        # rgb_tuple = gui_utils.hex_to_rgb(
+        #     self.theme_colors['THEME_BG_MID'], scale=True)
+        # solid_color = np.ones((height, width, 3)) * rgb_tuple
+        # self.im = self.ax.imshow(
+        #     solid_color,
+        #     cmap=cmap,
+        #     aspect='auto',
+        #     origin='lower',
+        #     animated=True,
+        #     zorder=0)
+        # self.im.set_extent((0, self.buffer_time,
+        #                     self.y_range[0], self.y_range[1]))
+        # ======================================================================
+
+        # set clim
         clim = self.visualization_settings.get_item_value('z_axis', 'range')
         self.im.set_clim(clim[0], clim[1])
         # Draw ticks on the axes
@@ -1839,71 +2134,48 @@ class SpectrogramPlot(SpectrogramBasedPlot):
 
     def autoscale(self):
         """
-        Automatically adjust spectrogram color limits (clim) based on the
-        statistics of the current frame.
+        Automatically adjust the spectrogram clim using robust percentiles.
 
-        Settings used (visualization_settings -> z_axis):
-            - range: [vmin, vmax]        # manual/default clim
-            - autoscale.apply: bool      # enable/disable autoscale
-            - autoscale.n_std_tolerance: float
-            - autoscale.n_std_separation: float
+        This computes (vmin, vmax) = percentile(spec_buffer, [p_min, p_max])
+        using z_axis.autoscale.percentile_limits. This is robust to outliers.
+
+        Notes
+        -----
+        - Computing percentiles on a large buffer every frame can be expensive.
+          Consider subsampling, limiting to visible window, or smoothing vmin/vmax.
+        - If the buffer is empty, no action is taken.
         """
 
-        # --- Get autoscale settings ---
-        auto_scale = self.visualization_settings.get_item('z_axis', 'autoscale')
-        # Statistics of the current spectrogram frame
-        arr = np.asarray(self.spec_in_graph)
-        if arr.size == 0 or not np.any(np.isfinite(arr)):
-            return  # nothing to do
-        mean_val = np.nanmean(arr)
-        std_val = np.nanstd(arr)
-        # Safety fallback
-        if std_val <= 0 or not np.isfinite(std_val):
-            std_val = 1e-12
-        # Current limits (might be NaN on first runs)
-        old_vmin, old_vmax = self.im.get_clim()
-        if not np.isfinite(old_vmin) or not np.isfinite(old_vmax):
-            # Initialize from configured range
-            old_vmin, old_vmax = self.visualization_settings.get_item_value(
-                'z_axis', 'range')
-        old_span = max(old_vmax - old_vmin, 1e-12)
-        # Autoscale params
-        std_tol = auto_scale.get_item_value('n_std_tolerance')
-        std_factor = auto_scale.get_item_value('n_std_separation')
-        # Expected span based on current spec
-        new_span = std_factor * std_val
-        # decide if reescale needed
-        do_rescale = (
-                new_span > old_span * std_tol or  # too large for current scale
-                new_span < old_span / std_tol  # too small for current scale
-        )
-        if not do_rescale:
+        # Check if buffer has data
+        if self.spec_buffer is None or self.spec_buffer.size == 0:
             return
-        # New limits
-        new_vmin = mean_val - 0.5 * new_span
-        new_vmax = mean_val + 0.5 * new_span
-        # Optional padding
-        pad = 0.05 * new_span
-        new_vmin -= pad
-        new_vmax += pad
-        # Safety for log-power spectrograms
-        if self.signal_settings.get_item_value('spectrogram', 'log_power'):
-            new_vmin = max(new_vmin, -300)  # avoid insane log values
-            new_vmax = min(new_vmax, 300)
-        new_range = [float(new_vmin), float(new_vmax)]
-        # Apply to image
-        self.im.set_clim(new_range[0], new_range[1])
-        self.c_lim = new_range
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+        # Get settings
+        auto_scale_node = self.visualization_settings.get_item(
+            'z_axis', 'autoscale')
+        pct_limits = auto_scale_node.get_item_value('percentile_limits')
+
+        # Calculate limits based on percentiles
+        vmin, vmax = np.percentile(self.spec_buffer, pct_limits)
+
+        # Avoid singular range
+        if vmax <= vmin:
+            vmax = vmin + 1e-12
+
+        # Apply to image
+        if self.im is not None:
+            self.im.set_clim(vmin, vmax)
+        self.c_lim = (vmin, vmax)
+        self.autoscale_pct_lims = pct_limits
+
+    def update_plot_data(self):
         """
-        Append the new data, then recalc and update the spectrogram.
+        Fetch new samples, update internal spectrogram buffers, and refresh artists.
         """
+        t0 = time.time()
         # Compute spectrogram
-        spec, t, f = self.compute_spectrogram(
-            cha_idx=self.curr_cha,
-            log_power=self.signal_settings.get_item_value(
-                'spectrogram', 'log_power'))
+        spec, t, f, sef = self.update_spectrogram()
+        spec = spec[:, :, self.curr_cha]  # select only the current channel
         # Update the image
         mode = self.visualization_settings.get_item_value('mode')
         if mode == 'geek':
@@ -1912,28 +2184,82 @@ class SpectrogramPlot(SpectrogramBasedPlot):
             self.y_in_graph = f
             self.spec_in_graph = spec
         else:
-            self.t_in_graph = self.roll_array(self.times_buffer,
-                                              self.times_buffer)
-            self.x_in_graph = np.mod(self.t_in_graph, self.buffer_time)
+            self.t_in_graph = self.roll_array(t, t)
+            self.x_in_graph = np.mod(self.t_in_graph, self.window_time)
             self.y_in_graph = f
             self.spec_in_graph = self.roll_array(t, spec, time_axis=1)
             self.update_marker()
-        self.im.set_extent([self.x_in_graph[0], self.x_in_graph[-1],
-                            self.y_in_graph[0], self.y_in_graph[-1]])
-        self.im.set_data(self.spec_in_graph)
+
+        # pcolormesh update (slower)
+        # ======================================================================
+        # Since grid size changes dynamically with incoming chunks,
+        # we recreate the mesh (not ideal)
+        if self.im:
+            self.im.remove()
+        cmap = self.visualization_settings.get_item_value('z_axis',
+                                                          'cmap')
+        self.im = self.ax.pcolormesh(
+            self.x_in_graph,
+            self.y_in_graph,
+            self.spec_in_graph[1:, 1:],
+            cmap=cmap,
+            clim=self.c_lim,
+            shading='flat',
+            animated=True,
+            zorder=0
+        )
+        # ======================================================================
+
+        # imshow update (faster)
+        # ======================================================================
+        # x0 = 0 if self.x_in_graph.size <= 1 else self.x_in_graph[0]
+        # self.im.set_extent([x0, self.x_in_graph[-1],
+        #                     self.y_in_graph[0], self.y_in_graph[-1]])
+        # self.im.set_data(self.spec_in_graph)
+        # # ======================================================================
+
+        # Update spectral edge
+        if self.show_sef:
+            sef = sef[:, self.curr_cha]
+            if mode == 'geek':
+                self.spec_edge_in_graph = sef
+            else:
+                self.spec_edge_in_graph = self.roll_array(t, sef)
+            self.curves[0].set_data(self.x_in_graph,
+                                    self.spec_edge_in_graph)
+
         # Autoscale and update clim
-        apply_autoscale = self.visualization_settings.get_item_value(
-            'z_axis', 'autoscale', 'apply')
-        if apply_autoscale:
+        if self.apply_autoscale:
             self.autoscale()
         self.draw_x_axis_ticks()
         self.draw_y_axis_ticks()
         self.c_lim = self.im.get_clim()
 
+        # Debug info
+        # print('>> Debug:')
+        # print(f'\t>> Update time: {time.time() - t0:.4f} s')
+        # print(f'\t>> Buffer shape (fft size): {self.data_buffer.shape} ('
+        #       f'{self.fft_size})')
+        # print('\t>> Shapes (t_in_graph, f_in_graph, spec):',
+        #       self.x_in_graph.shape,
+        #       self.y_in_graph.shape,
+        #       spec.shape)
+        # print('\t>> Times extent:', self.times_buffer[0], self.times_buffer[-1])
+        # print('\t>> Spect extent:', t[0], t[-1])
+        # print(f'\t>> Marker (i, x, t): '
+        #       f'{self.marker_pos}, '
+        #       f'{float(self.marker_line.get_xdata()[0])}, '
+        #       f'{self.t_in_graph[self.marker_pos]}'
+        #       )
+        # print('\t>> Raw timestamps:', t)
+        # print('\t>> Rol timestamps:', self.t_in_graph)
+
     def update_plot_draw_animated_elements(self):
         mode = self.visualization_settings.get_item_value('mode')
         # Draw animated elements
         self.ax.draw_artist(self.im)
+        if self.show_sef :
+            self.ax.draw_artist(self.curves[0])
         if mode == 'clinical':
             self.ax.draw_artist(self.marker_line)
             self.ax.draw_artist(self.marker_tick)
@@ -1984,8 +2310,10 @@ class PowerDistributionPlot(SpectrogramBasedPlot):
         # Signal settings
         signal_settings = BaseSignalSettings()
         signal_settings.add_spectrogram_settings()
-        spect_settings = signal_settings.get_item('spectrogram')
-        spect_settings.remove_item('log_power')
+        # Remove unused spectrogram settings
+        signal_settings.get_item('spectrogram').remove_item('log_power')
+
+        # Power distribution settings
         power_dist = signal_settings.add_item("power_distribution")
         power_dist.add_item(
             'band_labels',
@@ -2071,9 +2399,30 @@ class PowerDistributionPlot(SpectrogramBasedPlot):
         self.curr_cha = self.worker.receiver.get_channel_indexes_from_labels(
             init_cha_label)
 
-        # Visualization time window
-        self.buffer_time = self.visualization_settings.get_item_value(
+        self.time_window = self.signal_settings.get_item_value(
+            'spectrogram', 'time_window')
+        self.buffer_time = 2 * self.time_window
+        self.window_time = self.visualization_settings.get_item_value(
             'x_axis', 'seconds_displayed')
+        self.fft_size = int(self.time_window * self.fs)
+
+        # Spectrogram specific parameters
+        self.fft_log_power = False
+        self.apply_gaussian_smoothing = self.signal_settings.get_item_value(
+            'spectrogram', 'freq_smooth', 'apply')
+        self.gaussian_smth_sigma = self.signal_settings.get_item_value(
+            'spectrogram', 'freq_smooth', 'sigma')
+        self.apply_ema_smoothing = self.signal_settings.get_item_value(
+            'spectrogram', 'time_smooth', 'apply')
+        self.ema_smth_alpha = self.signal_settings.get_item_value(
+            'spectrogram', 'time_smooth', 'alpha')
+        self.show_spectral_edge = self.signal_settings.get_item_value(
+            "spectrogram", "spectral_edge_freq", "show")
+        self.spectral_edge_pct = self.signal_settings.get_item_value(
+            "spectrogram", "spectral_edge_freq", "percentile")
+
+        self.apply_autoscale = self.visualization_settings.get_item_value(
+            'z_axis', 'autoscale', 'apply')
 
         # Update frequency bands dict
         self.frequency_bands = self.signal_settings.get_item(
@@ -2139,14 +2488,13 @@ class PowerDistributionPlot(SpectrogramBasedPlot):
         self.y_range[1] = max_cum_power
         self.draw_y_axis_ticks()
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         """
         Append the new data, then recalc and update the spectrogram.
         """
         # Compute spectrogram
-        spec, t, f = self.compute_spectrogram(
-            cha_idx=self.curr_cha,
-            log_power=False)
+        spec, t, f, __ = self.update_spectrogram()
+        spec = spec[:, :, self.curr_cha]
         spec_norm = spec / spec.sum(axis=0)
         # Update data
         mode = self.visualization_settings.get_item_value('mode')
@@ -2155,19 +2503,18 @@ class PowerDistributionPlot(SpectrogramBasedPlot):
             self.x_in_graph = self.t_in_graph
             self.y_in_graph = f
         else:
-            self.t_in_graph = self.roll_array(self.times_buffer,
-                                              self.times_buffer)
-            self.x_in_graph = np.mod(self.t_in_graph, self.buffer_time)
+            self.t_in_graph = self.roll_array(t, t)
+            self.x_in_graph = np.mod(self.t_in_graph, self.window_time)
             self.y_in_graph = f
             spec_norm = self.roll_array(t, spec_norm, time_axis=1)
             self.update_marker()
         # Redefine the t_in_graph vector to match t dimensions
-        interp_func = interpolate.interp1d(
-            np.linspace(0, 1, len(self.t_in_graph)),
-            self.t_in_graph, kind='linear',
-            fill_value="extrapolate")
-        t_in_graph_resampled = interp_func(np.linspace(0, 1, len(t)))
-        x = np.mod(t_in_graph_resampled, self.buffer_time)
+        # interp_func = interpolate.interp1d(
+        #     np.linspace(0, 1, len(self.t_in_graph)),
+        #     self.t_in_graph, kind='linear',
+        #     fill_value="extrapolate")
+        # # t_in_graph_resampled = interp_func(np.linspace(0, 1, len(t)))
+        # x = np.mod(t_in_graph_resampled, self.buffer_time)
         # Calculate power distribution
         self.cum_power_in_graph = np.zeros(spec.shape[1])
         band_labels = self.frequency_bands.get_item_value('band_labels')
@@ -2177,9 +2524,11 @@ class PowerDistributionPlot(SpectrogramBasedPlot):
             idx_max = np.argmin(np.abs(f - band_freqs[i_b][1]))
             relative_power = spec_norm[idx_min:idx_max,:].sum(axis=0) * 100
             # Calculate patch coordinates
-            patch_base = np.column_stack([x, self.cum_power_in_graph])
+            patch_base = np.column_stack([self.x_in_graph,
+                                          self.cum_power_in_graph])
             self.cum_power_in_graph += relative_power
-            patch_top = np.column_stack([x, self.cum_power_in_graph])
+            patch_top = np.column_stack([self.x_in_graph,
+                                         self.cum_power_in_graph])
             # Set the patch
             self.patches[i_b].set_xy(
                 np.concatenate([patch_base, patch_top[::-1]], axis=0))
@@ -2347,9 +2696,6 @@ class TopographyPlot(HeadBasedPlot):
     @staticmethod
     def update_lsl_stream_related_settings(signal_settings,
                                            visualization_settings, stream_info):
-        signal_settings.get_item("re_referencing", "channel"). \
-            edit_item(value=stream_info.l_cha[0],
-                      value_options=stream_info.l_cha)
         return signal_settings, visualization_settings
 
     @staticmethod
@@ -2519,7 +2865,7 @@ class TopographyPlot(HeadBasedPlot):
         self.power_in_graph = power_values
         return power_values
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         # Compute PSD
         power_values = self.compute_power()
         # Update topographic plot
@@ -2592,9 +2938,6 @@ class ConnectivityPlot(HeadBasedPlot):
     @staticmethod
     def update_lsl_stream_related_settings(signal_settings,
                                            visualization_settings, stream_info):
-        signal_settings.get_item("re_referencing", "channel"). \
-            edit_item(value=stream_info.l_cha[0],
-                      value_options=stream_info.l_cha)
         return signal_settings, visualization_settings
 
     @staticmethod
@@ -2663,7 +3006,7 @@ class ConnectivityPlot(HeadBasedPlot):
     def draw_y_axis_ticks(self):
         pass
 
-    def update_plot_data(self, chunk_times, chunk_signal):
+    def update_plot_data(self):
         # DATA OPERATIONS ==================================================
         # Compute connectivity
         conn_metric = self.signal_settings.get_item_value(
@@ -2747,7 +3090,6 @@ class RealTimePlotWorker(QThread):
                     continue
             chunk_times, chunk_data = self.preprocessor.transform(
                 chunk_times, chunk_data)
-            # print('Chunk received at: %.6f' % time.time())
             # Check if the plot is ready to receive data (sometimes get
             # chunk takes a while and the user presses the button in
             # between)
@@ -2784,9 +3126,11 @@ class PlotsRealTimePreprocessor:
         self.l_cha = l_cha
         # Frequency filter
         if self.apply_freq_filt:
+            cutoff = self.freq_filt_settings.get_item_value('cutoff_freq')
+            cutoff = cutoff[0] if len(cutoff) == 1 else cutoff
             self.freq_filt = medusa.IIRFilter(
                 order=self.freq_filt_settings.get_item_value('order'),
-                cutoff=self.freq_filt_settings.get_item_value('cutoff_freq'),
+                cutoff=cutoff,
                 btype=self.freq_filt_settings.get_item_value('type'),
                 filt_method='sosfilt',
                 axis=0)

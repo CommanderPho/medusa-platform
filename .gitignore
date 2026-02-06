@@ -143,3 +143,4 @@ Medusa_Analyzer/Analyzer/medusa-analyzer/
 Medusa_Analyzer/Kernel/medusa-kernel/
 .cursorindexingignore
 .cursor/rules/derived-cursor-rules.mdc
+.specstory/.project.json

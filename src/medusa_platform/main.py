@@ -6,5 +6,6 @@ import sys
 if __name__ == '__main__':
     # Init QT application
     application = QApplication(sys.argv)
+    application.setStyle("WindowsVista")
     main_window = GuiMainClass()
     sys.exit(application.exec())
