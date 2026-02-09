@@ -1305,6 +1305,8 @@ class PlotsPanelConfigDialog(dialogs.MedusaDialog):
         self.tab_widget.tabBarClicked.connect(self.handle_tab_click)
         self.tab_widget.tabBarDoubleClicked.connect(self.edit_tab_name)
         self.tab_widget.tabCloseRequested.connect(self.remove_tab)
+        self.tab_widget.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tab_widget.tabBar().customContextMenuRequested.connect(self.show_tab_context_menu)
         # Add tab button
         plus_tab = QWidget()
         icon = gu.get_icon("add_element.svg",
@@ -1371,6 +1373,33 @@ class PlotsPanelConfigDialog(dialogs.MedusaDialog):
         self.tab_widget.tabBar().setTabButton(
             index, QTabBar.ButtonPosition.LeftSide, None)
         self.config.change_tab_name(index, new_name)
+
+
+    def show_tab_context_menu(self, pos):
+        index = self.tab_widget.tabBar().tabAt(pos)
+        if index < 0 or index == self.tab_widget.count() - 1:
+            return
+        menu = QMenu(self)
+        action = menu.addAction("Duplicate Tab")
+        action.triggered.connect(lambda: self.duplicate_tab(index))
+        menu.exec_(self.tab_widget.tabBar().mapToGlobal(pos))
+
+
+    def insert_tab_at(self, insert_index, tab_name, tab_config):
+        tab_widget = PlotsTabConfigWidget(tab_config, self.lsl_config, self.theme_colors)
+        self.tab_widget.insertTab(insert_index, tab_widget, tab_name)
+        self.config.tabs_config.insert(insert_index, tab_config)
+        self.tab_widget.setCurrentIndex(insert_index)
+
+
+    def duplicate_tab(self, index):
+        tab_config = self.config.tabs_config[index]
+        data = tab_config.to_serializable_obj()
+        data['lsl_config'] = self.lsl_config
+        data['theme_colors'] = self.theme_colors
+        data['tab_name'] = tab_config.tab_name + ' (copy)'
+        new_config = PlotsTabConfig.from_serializable_obj(data)
+        self.insert_tab_at(index + 1, new_config.tab_name, new_config)
 
     def set_config(self, config):
         # Check config
