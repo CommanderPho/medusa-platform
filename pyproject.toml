@@ -31,6 +31,8 @@ dependencies = [
     "pycparser==2.23",
     "pylsl==1.17.6",
     "pyparsing==3.2.5",
+    "pyqt5-qt5==5.15.2",
+    "pyqtinspect",
     "pyside6==6.10.1",
     "pyside6-addons==6.10.1",
     "pyside6-essentials==6.10.1",
@@ -64,6 +66,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/medusa_platform"]
+
+[tool.uv.sources]
+pyqtinspect = { path = "../PyQtInspect-Open", editable = true }
 
 # [build-system]
 # requires = ["setuptools>=61.0"]
