@@ -601,7 +601,7 @@ class PlotsTabConfig(components.SerializableComponent):
 
 
 class ConfigPlotFrameDialog(QDialog, ui_plot_config_dialog):
-
+    """ the dialog that pops up to configure a plot when you double click on one in the config editor """
     def __init__(self, uid, signal_settings, visualization_settings,
                  lsl_streams, plots_info, selected_lsl_stream=None,
                  selected_plot_info=None, theme_colors=None):
@@ -1275,7 +1275,7 @@ class PlotsPanelConfigDialog(dialogs.MedusaDialog):
 
         super().__init__(window_title="Real time plots panel configuration",
                          theme_colors=theme_colors,
-                         width=640, heigh=540,
+                         width=1280, heigh=960,
                          pos_x=None, pos_y=None)
         # Attributes
         self.lsl_config = lsl_config

@@ -955,7 +955,8 @@ class BasicConfigWindow(QDialog):
         self.stl = gui_utils.set_css_and_theme(self, self.theme_colors)
         self.setWindowIcon(QIcon(os.path.join(constants.SRC_ROOT, "gui", "images", "medusa_task_icon.png")))
         self.setWindowTitle('Default configuration window')
-        self.resize(640, 480)
+        # self.resize(640, 480)
+        self.resize(1280, 960)
 
         # Attributes
         self.medusa_interface = medusa_interface
