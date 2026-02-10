@@ -14,7 +14,7 @@ from PySide6.QtGui import *
 # MEDUSA MODULES
 from gui import gui_utils as gu
 from gui.qt_widgets import dialogs
-import constants, exceptions
+from medusa_platform import constants, exceptions
 
 
 ui_plots_panel_widget = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "studies_panel_widget.ui"))[0]

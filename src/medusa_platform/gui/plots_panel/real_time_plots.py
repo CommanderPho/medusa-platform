@@ -20,7 +20,7 @@ from scipy.signal.windows import hann
 from scipy.signal import ShortTimeFFT
 from acquisition import lsl_utils
 from gui import gui_utils
-import constants, exceptions
+from medusa_platform import constants, exceptions
 
 # MEDUSA-KERNEL MODULES
 import medusa

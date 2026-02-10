@@ -6,8 +6,7 @@ from PySide6.QtGui import *
 from PySide6.QtCore import Qt
 import numpy as np
 # Medusa imports
-import constants
-import exceptions
+from medusa_platform import constants, exceptions
 from gui.themes import themes
 
 # ------------------------------- QT UTILS ----------------------------------- #

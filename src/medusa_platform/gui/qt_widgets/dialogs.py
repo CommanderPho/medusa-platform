@@ -7,7 +7,7 @@ from PySide6.QtCore import Signal, Qt, QThread
 from PySide6.QtGui import QIcon, QTextCursor, QPixmap, QFont
 from PySide6.QtWidgets import *
 
-import constants
+from medusa_platform import constants
 # Medusa imports
 from gui import gui_utils
 

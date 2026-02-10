@@ -12,8 +12,7 @@ from gui.qt_widgets import dialogs
 from gui.qt_widgets.notifications import NotificationStack
 from acquisition import lsl_utils
 from medusa.meeg import meeg_montages
-import exceptions
-import constants
+from medusa_platform import constants, exceptions
 from gui.lsl_config.channel_selection_dialogs import (
     LSLEEGChannelSelection, LSLGeneralChannelSelection)
 

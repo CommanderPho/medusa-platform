@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from gui import gui_utils
 from gui.qt_widgets import dialogs
 from gui.qt_widgets.notifications import NotificationStack
-import constants
+from medusa_platform import constants
 
 # Load the .ui files
 ui_main_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "user_profile_dialog.ui"))[0]

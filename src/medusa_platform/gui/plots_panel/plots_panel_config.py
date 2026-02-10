@@ -15,7 +15,7 @@ from medusa.settings_schema import *
 from pandas.io.pytables import Table
 
 from acquisition import lsl_utils
-import exceptions, constants
+from medusa_platform import constants, exceptions
 
 # MEDUSA
 from gui.qt_widgets import dialogs

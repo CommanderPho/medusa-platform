@@ -6,7 +6,7 @@ from PySide6 import QtGui, QtWidgets
 # Medusa imports
 from gui import gui_utils
 from gui.qt_widgets import dialogs
-import constants
+from medusa_platform import constants
 
 # Load the .ui files
 create_app_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "create_app_dialog.ui"))[0]

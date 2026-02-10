@@ -12,7 +12,7 @@ from PySide6.QtGui import *
 import utils
 from medusa.settings_schema import *
 from gui.plots_panel import plots_panel_config, real_time_plots
-import constants, exceptions
+from medusa_platform import constants, exceptions
 from gui.qt_widgets import dialogs
 from acquisition import lsl_utils
 from gui import gui_utils as gu

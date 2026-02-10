@@ -12,7 +12,7 @@ import sys
 from PySide6.QtGui import *
 
 # MEDUSA
-import constants
+from medusa_platform import constants
 import resources, exceptions, accounts_manager, app_manager
 import updates_manager
 import utils

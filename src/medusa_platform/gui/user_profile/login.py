@@ -8,8 +8,7 @@ import requests
 # Medusa imports
 from gui import gui_utils
 from gui.qt_widgets import dialogs
-import exceptions
-import constants
+from medusa_platform import constants, exceptions
 
 # Load the .ui files
 ui_main_dialog = loadUiType(os.path.join(constants.SRC_ROOT, "gui", "ui_files", "login_dialog.ui"))[0]
