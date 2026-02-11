@@ -1,4 +1,5 @@
 # PYTHON MODULES
+import logging
 import sys, os, json, traceback
 from math import floor
 
@@ -11,6 +12,7 @@ from PySide6.QtGui import *
 # MEDUSA COMPONENTS
 from medusa import components
 from medusa.analysis.time_plot.time_plot import curr_dir
+from medusa.settings_schema import merge_settings_with_defaults
 from medusa.settings_schema import *
 from pandas.io.pytables import Table
 
@@ -530,10 +532,20 @@ class PlotsTabConfig(components.SerializableComponent):
                 uid = item['uid']
                 plot_info = real_time_plots.get_plot_info(
                     config.plots_settings[uid]['plot_uid'])
-                signal_settings = \
-                    SettingsTree(config.plots_settings[uid]['signal_settings'])
-                visualization_settings = \
-                    SettingsTree(config.plots_settings[uid]['visualization_settings'])
+                loaded_signal = config.plots_settings[uid]['signal_settings']
+                loaded_vis = config.plots_settings[uid]['visualization_settings']
+                if plot_info is not None:
+                    default_signal, default_vis = plot_info['class'].get_default_settings()
+                    loaded_signal, miss_sig, extra_sig = merge_settings_with_defaults(default_signal.to_serializable_obj(), loaded_signal)
+                    loaded_vis, miss_vis, extra_vis = merge_settings_with_defaults(default_vis.to_serializable_obj(), loaded_vis)
+                    def _path_str(paths):
+                        return ", ".join(".".join(p) for p in paths)
+                    if miss_sig or extra_sig:
+                        logging.warning("Plot %s signal_settings: missing keys (using defaults): %s; extra keys (ignored): %s", uid, _path_str(miss_sig) or "—", _path_str(extra_sig) or "—")
+                    if miss_vis or extra_vis:
+                        logging.warning("Plot %s visualization_settings: missing keys (using defaults): %s; extra keys (ignored): %s", uid, _path_str(miss_vis) or "—", _path_str(extra_vis) or "—")
+                signal_settings = SettingsTree(loaded_signal)
+                visualization_settings = SettingsTree(loaded_vis)
                 lsl_stream_info = config.plots_settings[uid]['lsl_stream_info']
                 try:
                     # Update lsl_stream (necessary for weak LSL search)

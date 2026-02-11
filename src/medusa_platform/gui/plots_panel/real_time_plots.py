@@ -1349,6 +1349,7 @@ class PSDPlotMultichannel(FreqBasedPlot):
             value=[0.1, 30.0],
             info="X-axis range (min, max) in Hz.",
         )
+        x_ax.add_item("seconds_displayed", value=10.0, value_range=[0, None], info="Time window for data buffer (s); PSD x-axis is frequency.")
         visualization_settings.add_grid_settings_to_axis("x_axis")
         # Y-axis
         y_ax = visualization_settings.get_item("y_axis")
@@ -1509,6 +1510,7 @@ class PSDPlotSingleChannel(FreqBasedPlot):
             value_range=[None, None],
             info="X-axis range (min, max) in Hz.",
         )
+        x_ax.add_item("seconds_displayed", value=10.0, value_range=[0, None], info="Time window for data buffer (s); PSD x-axis is frequency.")
         visualization_settings.add_grid_settings_to_axis("x_axis")
         # Y-axis
         y_ax = visualization_settings.get_item("y_axis")

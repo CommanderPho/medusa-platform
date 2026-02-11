@@ -8,7 +8,7 @@
 		}
 	],
 	"settings": {
-		"workbench.colorTheme": "Default Dark+",
+		"workbench.colorTheme": "DarkOnePro Custom - Visually Distinct",
 		"workbench.colorCustomizations": {
 			"titleBar.activeBackground": "#2d1b2e",
 			"titleBar.activeForeground": "#f8b4d4",
@@ -45,14 +45,92 @@
 			"scrollbarSlider.hoverBackground": "#6b3d6b80",
 			"scrollbarSlider.activeBackground": "#8b4d8b80"
 		},
-		"editor.tokenColorCustomizations": {
-			"comments": "#b87a9a",
-			"strings": "#f48fb1",
-			"keywords": "#f8b4d4",
-			"functions": "#f06292",
-			"numbers": "#e91e8c",
-			"variables": "#e8c4d8",
-			"types": "#f8b4d4"
-		}
+		// "editor.tokenColorCustomizations": {
+		// 	"comments": "#b87a9a",
+		// 	"strings": "#f48fb1",
+		// 	"keywords": "#f8b4d4",
+		// 	"functions": "#f06292",
+		// 	"numbers": "#e91e8c",
+		// 	"variables": "#e8c4d8",
+		// 	"types": "#f8b4d4"
+		// }
+		"actionButtons": {
+
+			"commands": [
+				// {
+				// 	"name": "Back",
+				// 	"color": "white",
+				// 	"useVsCodeApi": true,
+				// 	"command": "workbench.action.navigateBack"
+				// },
+				// {
+				// 	"name": "Forward",
+				// 	"color": "white",
+				// 	"useVsCodeApi": true,
+				// 	"command": "workbench.action.navigateForward"
+				// },
+				// {
+				// 	"name": "Toggle Cell Output Scrolling",
+				// 	"color": "orange",
+				// 	"useVsCodeApi": true,
+				// 	"command": "notebook.cell.toggleOutputScrolling"
+				// },
+				// {
+				// 	"name": "Restart Python Language Server",
+				// 	"color": "#00FF00",
+				// 	"useVsCodeApi": true,
+				// 	"command": "python.analysis.restartLanguageServer"
+				// },
+				// {
+				//     "name": "Toggle line numbers",
+				//     "color": "#00FF00",
+				//     "useVsCodeApi": true,
+				//     "command": "python.analysis.restartLanguageServer"
+				// },
+				// {
+				// 	"name": "VSCode Dev Consoler",
+				// 	"color": "#99CCFF",
+				// 	"useVsCodeApi": true,
+				// 	"command": "workbench.action.toggleDevTools"
+				// },
+				{
+					"name": "Launch Medusa",
+					"tooltip": "Build the JupyterBook project",
+					"color": "#e91e8c",
+					"useVsCodeApi": false,
+					"command": "C:\\Users\\pho\\repos\\EmotivEpoc\\ACTIVE_DEV\\medusa-platform\\.venv\\Scripts\\python.EXE src/medusa_platform/main.py"
+				},
+				{
+					"name": "Launch PyQtInspect",
+					"tooltip": "Launch PyQtInspect for inspecting PyQt-based windows/widgets interactively using pqi-server",
+					"color": "#1ebae9",
+					"useVsCodeApi": false,
+					"command": "C:\\Users\\pho\\repos\\EmotivEpoc\\ACTIVE_DEV\\medusa-platform\\.venv\\Scripts\\pqi-server.EXE",
+					"singleInstance": true,
+					"focus": false,
+				},
+
+				// {
+				// 	"name": "Launch PyQtInspect",
+				// 	"tooltip": "Launch PyQtInspect for inspecting PyQt-based windows/widgets interactively using pqi-server",
+				// 	"color": "#1ebae9",
+				// 	"useVsCodeApi": false,
+				// 	"command": "C:\\Users\\pho\\repos\\EmotivEpoc\\ACTIVE_DEV\\medusa-platform\\.venv\\Scripts\\pqi-server.EXE --direct C:\\Users\\pho\\repos\\EmotivEpoc\\ACTIVE_DEV\\medusa-platform\\src\\medusa_platform\\main.py",
+				// 	"singleInstance": true,
+				// 	"focus": false,
+				// },
+
+				// {
+				// 	"name": "⇥ Convert to File Spaces",
+				// 	"color": "white",
+				// 	"tooltip": "Convert tabs to spaces in the current file",
+				// 	"useVsCodeApi": true,
+				// 	"command": "editor.action.indentationToSpaces"
+				// },
+			],
+			"defaultColor": "grey",
+			"reloadButton": "↻",
+			"loadNpmCommands": true
+		},
 	}
 }

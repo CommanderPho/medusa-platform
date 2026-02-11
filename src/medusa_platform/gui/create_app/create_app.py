@@ -67,14 +67,15 @@ class CreateAppDialog(QtWidgets.QDialog, create_app_dialog):
             if len(app_name) == 0:
                 raise ValueError('Please introduce the extension name')
 
-            # Get template type
+            # Get template type (resolve relative to package so it works regardless of CWD)
             app_template = self.listWidget_app_template.currentItem().text()
+            templates_dir = os.path.join(constants.SRC_ROOT, 'templates')
             if app_template == 'Empty project':
-                app_template_path = 'templates/empty_template'
+                app_template_path = os.path.join(templates_dir, 'empty_template')
             elif app_template == 'Qt project':
-                app_template_path = 'templates/qt_template'
+                app_template_path = os.path.join(templates_dir, 'qt_template')
             elif app_template == 'Unity project':
-                app_template_path = 'templates/unity_template'
+                app_template_path = os.path.join(templates_dir, 'unity_template')
             else:
                 raise ValueError('Unknown template!')
 

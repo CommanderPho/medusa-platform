@@ -1,24 +1,18 @@
 :: ===========================================================================================================================
 :: Activate environment and execute main.py
-call ".vvenv\Scripts\activate"
+call ".venv\Scripts\activate"
 IF %ERRORLEVEL% NEQ 0 GOTO activateError
-:: Change directory to src
-cd "src"
-IF %ERRORLEVEL% NEQ 0 GOTO cdError
-:: Execute main-py
-python "main.py"
+:: Ensure medusa_platform package is importable (src on PYTHONPATH)
+set "PYTHONPATH=%~dp0src"
+:: Execute main as module
+python -m medusa_platform.main
+
 IF %ERRORLEVEL% NEQ 0 GOTO pythonError
 ::PAUSE
 exit
 
 :activateError
 powershell -Command "& {Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Python venv cant be activated!', 'Error', 'OK', [System.Windows.Forms.MessageBoxIcon]::Error);}"
-echo %ERRORLEVEL%
-::PAUSE
-exit /b 1
-
-:cdError
-powershell -Command "& {Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Directory src not found!', 'Error', 'OK', [System.Windows.Forms.MessageBoxIcon]::Error);}"
 echo %ERRORLEVEL%
 ::PAUSE
 exit /b 1
