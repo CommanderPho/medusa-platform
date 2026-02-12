@@ -2,9 +2,6 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"path": "../PyQtInspect-Open"
 		}
 	],
 	"settings": {
@@ -55,7 +52,6 @@
 		// 	"types": "#f8b4d4"
 		// }
 		"actionButtons": {
-
 			"commands": [
 				// {
 				// 	"name": "Back",
@@ -109,7 +105,6 @@
 					"singleInstance": true,
 					"focus": false,
 				},
-
 				// {
 				// 	"name": "Launch PyQtInspect",
 				// 	"tooltip": "Launch PyQtInspect for inspecting PyQt-based windows/widgets interactively using pqi-server",
@@ -119,7 +114,6 @@
 				// 	"singleInstance": true,
 				// 	"focus": false,
 				// },
-
 				// {
 				// 	"name": "⇥ Convert to File Spaces",
 				// 	"color": "white",

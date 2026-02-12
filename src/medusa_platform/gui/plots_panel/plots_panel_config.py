@@ -638,6 +638,12 @@ class ConfigPlotFrameDialog(QDialog, ui_plot_config_dialog):
             self.comboBox_lsl_streams.currentIndexChanged.connect(
                 self.on_combobox_lsl_stream_changed)
             self.pushButton_reset.clicked.connect(self.reset)
+            self.pushButton_toggle_advanced.toggled.connect(
+                self.on_toggle_advanced)
+            # Advanced mode state
+            self._advanced_mode = False
+            self._signal_json_edit = None
+            self._visualization_json_edit = None
             # Check errors
             if selected_lsl_stream is not None and \
                     not isinstance(selected_lsl_stream,
@@ -793,8 +799,128 @@ class ConfigPlotFrameDialog(QDialog, ui_plot_config_dialog):
         except Exception as e:
             self.exception_handler(e)
 
+    def _create_json_editor(self, json_text):
+        """Create a styled QPlainTextEdit for JSON editing."""
+        editor = QPlainTextEdit()
+        editor.setPlainText(json_text)
+        font = QFont("Consolas", 9)
+        font.setStyleHint(QFont.Monospace)
+        editor.setFont(font)
+        editor.setLineWrapMode(QPlainTextEdit.NoWrap)
+        editor.setTabStopDistance(28)  # ~4 spaces at 9pt
+        return editor
+
+    def _get_current_settings_as_trees(self):
+        """Read the current settings from the tree widgets and return
+        (signal_settings, visualization_settings) as SettingsTree objects."""
+        plot_class = self.selected_plot_info['class']
+        signal_settings, visualization_settings = (
+            plot_class.get_default_settings())
+        stream = self.working_lsl_streams[
+            self.comboBox_lsl_streams.currentIndex()]
+        signal_settings, visualization_settings = (
+            plot_class.update_lsl_stream_related_settings_common(
+                signal_settings, visualization_settings, stream))
+        signal_settings = signal_settings.update_tree_from_widget(
+            self.signal_options_tree)
+        visualization_settings = (
+            visualization_settings.update_tree_from_widget(
+                self.visualization_options_tree))
+        return signal_settings, visualization_settings
+
+    def on_toggle_advanced(self, checked):
+        """Toggle between tree-view settings and raw JSON text editors."""
+        try:
+            if checked:
+                # --- Switch to advanced JSON mode ---
+                if self.selected_plot_info is None:
+                    self.pushButton_toggle_advanced.setChecked(False)
+                    raise ValueError(
+                        'Please select a plot type before switching '
+                        'to advanced mode.')
+
+                # Serialize current tree settings to JSON
+                sig_tree, vis_tree = self._get_current_settings_as_trees()
+                sig_json = json.dumps(sig_tree.to_serializable_obj(),
+                                      indent=4, sort_keys=False)
+                vis_json = json.dumps(vis_tree.to_serializable_obj(),
+                                      indent=4, sort_keys=False)
+
+                # Create JSON text editors
+                self._signal_json_edit = self._create_json_editor(sig_json)
+                self._visualization_json_edit = self._create_json_editor(
+                    vis_json)
+
+                # Replace tree widgets with text editors in the form layout
+                self.formLayout.replaceWidget(
+                    self.signal_options_tree,
+                    self._signal_json_edit)
+                self.signal_options_tree.hide()
+
+                self.formLayout.replaceWidget(
+                    self.visualization_options_tree,
+                    self._visualization_json_edit)
+                self.visualization_options_tree.hide()
+
+                self._advanced_mode = True
+                self.pushButton_toggle_advanced.setText('Standard')
+
+            else:
+                # --- Switch back to standard tree mode ---
+                if not self._advanced_mode:
+                    return
+
+                # Parse and validate JSON from the editors
+                try:
+                    sig_data = json.loads(
+                        self._signal_json_edit.toPlainText())
+                    vis_data = json.loads(
+                        self._visualization_json_edit.toPlainText())
+                except json.JSONDecodeError as je:
+                    dialogs.error_dialog(
+                        f'Invalid JSON — please fix syntax errors '
+                        f'before switching back.\n\n{je}',
+                        'JSON Validation Error')
+                    # Re-check the button so we stay in advanced mode
+                    self.pushButton_toggle_advanced.blockSignals(True)
+                    self.pushButton_toggle_advanced.setChecked(True)
+                    self.pushButton_toggle_advanced.blockSignals(False)
+                    return
+
+                # Rebuild SettingsTree objects from the parsed JSON
+                signal_settings = SettingsTree(sig_data)
+                visualization_settings = SettingsTree(vis_data)
+
+                # Remove JSON editors
+                self.formLayout.replaceWidget(
+                    self._signal_json_edit,
+                    self.signal_options_tree)
+                self._signal_json_edit.setParent(None)
+                self._signal_json_edit.deleteLater()
+                self._signal_json_edit = None
+
+                self.formLayout.replaceWidget(
+                    self._visualization_json_edit,
+                    self.visualization_options_tree)
+                self._visualization_json_edit.setParent(None)
+                self._visualization_json_edit.deleteLater()
+                self._visualization_json_edit = None
+
+                # Rebuild the tree view with the new settings
+                self.set_settings_in_tree_view(
+                    signal_settings, visualization_settings)
+
+                self._advanced_mode = False
+                self.pushButton_toggle_advanced.setText('Advanced')
+
+        except Exception as e:
+            self.exception_handler(e)
+
     def reset(self):
         try:
+            # If in advanced mode, switch back to standard first
+            if self._advanced_mode:
+                self.pushButton_toggle_advanced.setChecked(False)
             self.set_lsl_streams()
             self.set_plot_types()
         except Exception as e:
@@ -802,7 +928,23 @@ class ConfigPlotFrameDialog(QDialog, ui_plot_config_dialog):
 
     def accept(self):
         try:
-            # Update plot instance settings
+            # If in advanced JSON mode, parse JSON first
+            if self._advanced_mode:
+                try:
+                    sig_data = json.loads(
+                        self._signal_json_edit.toPlainText())
+                    vis_data = json.loads(
+                        self._visualization_json_edit.toPlainText())
+                except json.JSONDecodeError as je:
+                    raise ValueError(
+                        f'Invalid JSON — please fix syntax errors '
+                        f'before accepting.\n\n{je}')
+                self.signal_settings = SettingsTree(sig_data)
+                self.visualization_settings = SettingsTree(vis_data)
+                super().accept()
+                return
+
+            # Standard tree mode — update plot instance settings
             plot_class = self.selected_plot_info['class']
             # Get default settings
             signal_settings, visualization_settings = (
